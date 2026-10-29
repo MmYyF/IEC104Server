@@ -266,22 +266,22 @@ namespace IEC104.App.Views
             Log($"[bench] 10.内存：托管 {(memAfter - memBefore) / 1024.0 / 1024.0:0.0} MB"
                 + $"，进程私有 {process.PrivateMemorySize64 / 1024.0 / 1024.0:0.0} MB");
 
-            // ── 11. 工作区存取：现场最容易被忽略的一次性"卡死" ──
+            // ── 11. 工程存取：现场最容易被忽略的一次性"卡死" ──
             // 20 万点序列化成 JSON 是几十 MB，保存和打开都在 UI 线程上跑，
             // 这俩操作如果没优化，用户点一次"保存"就是十几秒无响应。
-            string workspacePath = Path.Combine(dir, "bench-workspace.json");
+            string workspacePath = Path.Combine(dir, "bench-project" + ProjectStore.Extension);
 
             sw.Restart();
-            viewModel.SaveWorkspace(workspacePath);
+            viewModel.SaveProjectTo(workspacePath, "压测工程");
             long saveMs = sw.ElapsedMilliseconds;
             long fileBytes = File.Exists(workspacePath) ? new FileInfo(workspacePath).Length : 0;
 
             sw.Restart();
-            int loaded = viewModel.LoadWorkspace(workspacePath);
+            int loaded = viewModel.OpenProject(workspacePath);
             Dispatcher.UIThread.RunJobs();
             long loadMs = sw.ElapsedMilliseconds;
 
-            Log($"[bench] 11.工作区存取 {totalPoints:N0} 点：保存 {saveMs} ms"
+            Log($"[bench] 11.工程存取 {totalPoints:N0} 点：保存 {saveMs} ms"
                 + $"（{fileBytes / 1024.0 / 1024.0:0.0} MB）+ 载入 {loadMs} ms（回读 {loaded:N0} 点）");
 
             Log("[bench] done");

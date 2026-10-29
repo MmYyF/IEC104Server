@@ -3,7 +3,7 @@
         xmlns:ctl="using:IEC104.App.Controls"
         xmlns:vm="using:IEC104.App.ViewModels"
         x:Class="IEC104.App.Views.MainWindow"
-        Title="IEC104-Server"
+        Title="{Binding WindowTitle}"
         Icon="/Assets/app.ico"
         Width="1224" Height="701"
         MinWidth="980" MinHeight="600"
@@ -54,18 +54,37 @@
             <MenuItem.Icon>
               <ctl:MenuGlyph Classes="menuIconTop" Data="{StaticResource IconFile}" />
             </MenuItem.Icon>
+            <!-- 1.10：工程（原"工作区"）。顺序是"文件 → 工程动作 → 通道 → 导出 → 退出"，
+                 工程动作排在最前，因为它们是"对文件本身"的操作，比"改文件内容"更外层。
+
+                 最近工程子菜单由 code-behind 在展开时填充（见 RebuildRecentProjectsMenu）：
+                 列表长度是动态的，用 XAML 绑定一个菜单项模板反而更绕，
+                 而且要让每一项能点、能开、能在文件失效时变灰。 -->
+            <MenuItem Header="新建工程…" Click="OnNewProjectClick" InputGesture="Ctrl+N">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconPlus}" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="打开工程…" Click="OnOpenProjectClick" InputGesture="Ctrl+O">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconFolderOpen}" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem x:Name="RecentProjectsMenuItem" Header="最近工程" SubmenuOpened="OnRecentProjectsSubmenuOpened">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconFile}" /></MenuItem.Icon>
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="保存" Command="{Binding SaveProjectCommand}" InputGesture="Ctrl+S">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconSave}" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="另存为…" Click="OnSaveProjectAsClick" InputGesture="Ctrl+Shift+S">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconSave}" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="关闭工程" Command="{Binding CloseProjectCommand}">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconExit}" /></MenuItem.Icon>
+            </MenuItem>
+            <Separator />
             <MenuItem Header="新建通道" Command="{Binding CreateConnectionCommand}">
               <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconConnection}" /></MenuItem.Icon>
             </MenuItem>
             <MenuItem Header="删除当前通道" Command="{Binding DeleteConnectionCommand}">
               <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconDelete}" /></MenuItem.Icon>
-            </MenuItem>
-            <Separator />
-            <MenuItem Header="打开工作区…" Click="OnOpenWorkspaceClick">
-              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconFolderOpen}" /></MenuItem.Icon>
-            </MenuItem>
-            <MenuItem Header="保存工作区…" Click="OnSaveWorkspaceClick">
-              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconSave}" /></MenuItem.Icon>
             </MenuItem>
             <Separator />
             <MenuItem Header="导出当前点表为 CSV…" Command="{Binding ExportPointsCommand}">
@@ -282,6 +301,26 @@
          同一排图标的线宽会各不相同。 -->
     <Border Grid.Row="1" Classes="toolbar" IsVisible="{Binding !IsSettingsOpen}">
       <StackPanel Orientation="Horizontal" Spacing="4">
+        <!-- ══ 文件区（1.10）══
+             保存按钮独占工具条最左，用**图标按钮**而不是带文字的按钮：
+             这一排文字按钮已经有 9~10 颗，卡在"稀缺资源"的上限上，
+             再加一颗带字的会把点表区挤出去。图标约 30px，代价可以忽略。
+
+             三个状态靠 Classes 切换（不换控件、不换图标）：
+               · 无改动  → .idle，图标降到 TextDisabledBrush，按钮禁用
+               · 有改动  → .dirty，图标用 PrimaryBrush（**六套主题各自主色**，切主题自动变）
+               · 写盘中  → 禁用，提示"正在保存…"
+             颜色全部走 DynamicResource，不写死色值。 -->
+        <Button Classes="toolIconOnly"
+                x:Name="ToolbarSaveButton"
+                Classes.dirty="{Binding CanSaveProject}"
+                Classes.idle="{Binding !CanSaveProject}"
+                Command="{Binding SaveProjectCommand}"
+                ToolTip.Tip="{Binding SaveProjectTip}">
+          <ctl:MenuGlyph Classes="toolIcon" Data="{StaticResource IconSave}" />
+        </Button>
+        <Rectangle Width="1" Height="18" Fill="{DynamicResource BorderLineBrush}" Margin="6,0" />
+
         <!-- 只在"通道 / 从站"视图里出现：扁平视图下没有"通道"这个对象，
              留着它等于给用户两个都能建的入口，而其中一个建出来的东西在侧栏里看不见 -->
         <Button Classes="tool" x:Name="NewChannelButton"
@@ -394,7 +433,7 @@
          ④ 整行固定 30 高、左右内边距 8、上下内边距 0，所有子元素
             VerticalAlignment=Center，保证文字真的在栏内居中而不是"骑"在下沿。 -->
     <Border Grid.Row="3" Classes="statusbar" x:Name="StatusBar">
-      <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto">
         <!-- Tag 是当前状态的显式标记：初始展开 -> "collapse"（提示将来可以收起）。
              只靠图标看不出来，自检要拿它判断图标到底翻没翻。 -->
         <Button Grid.Column="0" Classes="statusToggle" x:Name="SidebarToggleButton"
@@ -418,10 +457,23 @@
                    VerticalAlignment="Center" Margin="10,0,10,0"
                    TextTrimming="CharacterEllipsis" />
 
-        <TextBlock Grid.Column="3" Classes="hint" Text="{Binding RunningSummary}"
+        <!-- 保存状态（1.10）：只有"未保存"用主色，其余是普通灰字。
+             "已保存 14:32"这种带时刻的写法比一个静态的"已保存"有用得多——
+             现场最常见的疑问是"我最后一次存的是几点的那版"。
+
+             颜色为什么不绑 VM 给的画刷：绑的话切主题时画刷对象不会自动换
+             （VM 只在工程状态变化时通知），这条文字就会一直挂着旧主题的颜色。
+             改成"类 + 样式里的 DynamicResource"，换主题由样式引擎直接刷新。 -->
+        <TextBlock Grid.Column="3" Classes="hint saveState"
+                   Classes.dirty="{Binding IsProjectDirty}"
+                   Text="{Binding SaveStateText}"
+                   IsVisible="{Binding ShowSaveState}"
                    VerticalAlignment="Center" Margin="0,0,14,0" />
 
-        <TextBlock Grid.Column="4" Classes="statusBrand" Text="IEC104-Server"
+        <TextBlock Grid.Column="4" Classes="hint" Text="{Binding RunningSummary}"
+                   VerticalAlignment="Center" Margin="0,0,14,0" />
+
+        <TextBlock Grid.Column="5" Classes="statusBrand" Text="IEC104-Server"
                    VerticalAlignment="Center" />
       </Grid>
     </Border>
@@ -1008,6 +1060,106 @@
                        TextAlignment="Center" TextWrapping="Wrap" MaxWidth="420"
                        Margin="24" IsHitTestVisible="False" />
           </Grid>
+        </Border>
+
+        <!-- ══ 欢迎页（1.10）══
+             和点表面板同处 Grid.Row=0，靠声明顺序盖在它上面——**只盖右半区**，
+             左侧从站列表和底部监视面板保持可用：欢迎页不是"没打开工程"，
+             而是"工程已经恢复了，先问你要干什么"，所以后台监听、报文监视照常活着。
+
+             两种形态共用一套布局，差别全在绑定上：
+               · 没有工程（State A）→ "还没有打开工程" + 两个动作按钮 + 最近列表
+               · 已恢复工程（State B）→ "当前工程" + 名字 + 路径 + 「继续编辑」
+
+             退出的三条路：继续编辑 / 点侧栏任一从站 / 改结构（见 VM 的三处挂钩）。 -->
+        <Border Grid.Row="0" Classes="panel" x:Name="WelcomePanel"
+                IsVisible="{Binding IsWelcomeVisible}">
+          <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <!-- 间距压得比较紧是没办法的事：右半区的高度 = 窗口 − 标题栏 − 工具条
+                 − 监视面板 − 状态栏，1224×701 时只剩不到 300px。
+                 State B 比 State A 多出"工程名 + 路径 + 继续编辑"整块，
+                 按宽松的间距排下来，最近列表会被挤出可视区（第一版正是这样）。
+                 所以：State B 的"当前工程"降级成一行小字（eyebrow，见样式），
+                 副标题只在 State A 出现，最近列表自己限高——两种形态都能一眼看全。 -->
+            <StackPanel MaxWidth="620" Margin="32,20" Spacing="9"
+                        HorizontalAlignment="Center" VerticalAlignment="Center">
+
+              <StackPanel Spacing="5" HorizontalAlignment="Center">
+                <!-- 同一行文字两种身份：没有工程时是标题，有工程时退成"当前工程"小字，
+                     主角让给下面那个工程名 -->
+                <TextBlock Classes="welcomeTitle" Text="{Binding WelcomeTitle}"
+                           Classes.eyebrow="{Binding HasProject}"
+                           HorizontalAlignment="Center" />
+                <TextBlock Classes="welcomeSubtitle" Text="{Binding WelcomeSubtitle}"
+                           IsVisible="{Binding !HasProject}"
+                           HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+
+                <!-- State B 才有的那一块：工程名 + 完整路径 + 主按钮 -->
+                <StackPanel Spacing="3" Margin="0,2,0,0" HorizontalAlignment="Center"
+                            IsVisible="{Binding HasProject}">
+                  <TextBlock Classes="welcomeProject" Text="{Binding CurrentProjectName}"
+                             HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Classes="welcomeSubtitle" Text="{Binding WelcomeProjectPath}"
+                             HorizontalAlignment="Center" TextAlignment="Center"
+                             TextTrimming="CharacterEllipsis" MaxLines="1" MaxWidth="560" />
+                  <Button Classes="primary" Content="继续编辑" Padding="20,7"
+                          Margin="0,8,0,0" HorizontalAlignment="Center"
+                          Command="{Binding DismissWelcomeCommand}" />
+                </StackPanel>
+              </StackPanel>
+
+              <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center"
+                          Margin="0,8,0,0">
+                <Button Classes="welcomeSecondary" Click="OnWelcomeNewProjectClick">
+                  <StackPanel Orientation="Horizontal" Spacing="7">
+                    <ctl:MenuGlyph Classes="toolIcon" Data="{StaticResource IconPlus}" />
+                    <TextBlock Text="新建工程" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+                <Button Classes="welcomeSecondary" Click="OnWelcomeOpenProjectClick">
+                  <StackPanel Orientation="Horizontal" Spacing="7">
+                    <ctl:MenuGlyph Classes="toolIcon" Data="{StaticResource IconFolderOpen}" />
+                    <TextBlock Text="打开工程…" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+              </StackPanel>
+
+              <Rectangle Height="1" Fill="{DynamicResource DividerBrush}" Margin="0,10,0,0" />
+
+              <TextBlock Classes="welcomeSection" Text="最近使用" Margin="2,0,0,0" />
+
+              <TextBlock Classes="hint" Text="最近没有打开过的工程。"
+                         Margin="10,6,0,0" IsVisible="{Binding HasNoRecentProjects}" />
+
+              <!-- 最近列表自己限高并自己滚：5 条全展开会把这个区域撑出可视区，
+                   而外层的滚动条一旦出现，整个欢迎页就会被推得忽上忽下 -->
+              <ScrollViewer MaxHeight="132" VerticalScrollBarVisibility="Auto"
+                            HorizontalScrollBarVisibility="Disabled"
+                            IsVisible="{Binding HasRecentProjects}">
+                <ItemsControl ItemsSource="{Binding RecentProjects}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Button Classes="welcomeRecent" Command="{Binding OpenCommand}"
+                              Opacity="{Binding RowOpacity}"
+                              ToolTip.Tip="{Binding ToolTipText}">
+                        <Grid ColumnDefinitions="*,Auto">
+                          <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock Text="{Binding Name}" FontSize="12" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding DetailText}" Classes="hint"
+                                       TextTrimming="CharacterEllipsis" />
+                          </StackPanel>
+                          <TextBlock Grid.Column="1" Text="{Binding TimeText}" Classes="hint"
+                                     VerticalAlignment="Center" Margin="12,0,0,0" />
+                        </Grid>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </StackPanel>
+          </ScrollViewer>
         </Border>
 
         <GridSplitter Grid.Row="1" x:Name="MonitorSplitter"

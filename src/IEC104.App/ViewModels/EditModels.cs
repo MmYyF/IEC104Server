@@ -1106,7 +1106,9 @@ namespace IEC104.App.ViewModels
             _objectAddress = target.ObjectAddress;
             _name = target.Name;
             _type = target.Type;
-            _value = target.Value;
+            // 1.10：对话框里这一格现在编辑的是**初始值**，不是运行中的当前值。
+            // 想改运行值直接在点表里改（那样主站会收到变位报文）。
+            _value = target.InitValue;
             _isInvalid = target.IsInvalid;
             _isBlocked = target.IsBlocked;
             _isSubstituted = target.IsSubstituted;
@@ -1183,7 +1185,13 @@ namespace IEC104.App.ViewModels
         {
             _target.Name = _name;
             _target.Type = _type;
+
+            // 先写初始值，再把当前值设成同一个数。
+            // 为什么两个都写：用户在"初始值"格里填了 5 点确定，期待的是"界面上也是 5"，
+            // 而不是"看着还是 0、只有复位才变 5"。改初始值本身就是一次明确的重新初始化。
+            _target.InitValue = _value;
             _target.Value = _value;
+
             _target.IsInvalid = _isInvalid;
             _target.IsBlocked = _isBlocked;
             _target.IsSubstituted = _isSubstituted;

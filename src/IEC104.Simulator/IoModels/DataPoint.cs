@@ -30,6 +30,18 @@ namespace IEC104.Simulator.IoModels
         /// <summary>当前值。遥信用 0/1；遥测用工程值；步位置用档位</summary>
         public double Value { get; set; }
 
+        /// <summary>
+        /// 初始值（1.10 新增）—— 工程里保存的"设计值"，也是「按初始值复位」的基准。
+        ///
+        /// 为什么不复用 <see cref="Value"/>：两者语义不同且会分叉。
+        /// 联调时把点值改成 60 看主站反应，<c>Value</c> 变 60，但初始值仍是设计时的 0；
+        /// 交班前按初始值复位，全部回到 0。若只存一个字段，这个"复位"就没有依据了。
+        ///
+        /// 约定：只有编辑信号（PointWindow）和「按初始值复位」会改它，
+        /// <see cref="SetValue"/> 永不触碰——运行态改值不许污染设计值。
+        /// </summary>
+        public double InitValue { get; set; }
+
         /// <summary>是否无效（对应 QDS/SIQ 的 IV 位）</summary>
         public bool IsInvalid { get; set; }
 

@@ -71,7 +71,18 @@ namespace IEC104.App.ViewModels
             // 参数实例塞进来——三条长度的权威值在通道上，不在从站上。
             Station = new SlaveStation();
             SyncStation();
+
+            // 1.10：把"任意点值变了"从协议层一路冒泡到工程层（用于值脏标记）。
+            // 这里只用一次委托，不按点订阅。
+            Station.ValueChangedHook = () => ValueTouched?.Invoke();
         }
+
+        /// <summary>
+        /// 值变化上报（1.10）。由 <see cref="MainWindowViewModel"/> 在从站加入通道时注入，
+        /// 用来把工程标成"值脏"（退出时要存最后值）。
+        /// 为 null 表示这台从站还没挂到任何工程上（例如自检里临时造的从站）。
+        /// </summary>
+        internal Action ValueTouched { get; set; }
 
         public string Name
         {
@@ -153,6 +164,10 @@ namespace IEC104.App.ViewModels
                     Type = draft.Type,
                     Name = draft.Name,
                     Value = draft.Value,
+                    // 1.10：建点时初始值默认等于给的初值。
+                    // 所有铺点入口（手建、批量铺点、初始化数据、载入工程）都走这里，
+                    // 所以"初始值"总有个合理起点；载入工程时会被文件里的 InitValue 覆盖。
+                    InitValue = draft.Value,
                     LastChangedAt = now
                 };
 

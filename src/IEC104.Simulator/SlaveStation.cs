@@ -558,12 +558,28 @@ namespace IEC104.Simulator
         }
 
         /// <summary>
+        /// 任意点位值变化时的外部通知（1.10）。
+        ///
+        /// 用途只有一个：让工程知道"值脏了"，好在退出时保存最后一次的值。
+        /// 为什么挂在这一层而不是逐点订阅：这里是**所有值变化的唯一咽喉**
+        /// （<see cref="DataPoint.SetValue"/> → Owner → 本类），
+        /// 挂这里等于 0 个额外对象；逐点订阅又会回到 1.9.7 花 32 MB 换来的老问题。
+        ///
+        /// 之所以是 public 而不是 internal：App 程序集要挂它，
+        /// 两个程序集之间没有 InternalsVisibleTo。它只是一个回调槽，暴露出去无害。
+        /// </summary>
+        public Action ValueChangedHook { get; set; }
+
+        /// <summary>
         /// 点位值变化回调（原先是 DataPoint.ValueChanged 的订阅目标，1.9.7 起由
         /// <see cref="DataPoint.SetValue"/> 直接调用）。必须保持 internal 以上可见性，
         /// 因为它在 Simulator 程序集内部被跨类调用。
         /// </summary>
         internal void OnPointValueChanged(DataPoint point, double newValue)
         {
+            // 先通知工程层（廉价的一次委托调用），再做报文上送
+            ValueChangedHook?.Invoke();
+
             // 自发上送：变位即发，COT=3
             Asdu asdu = new Asdu(_parameters)
             {

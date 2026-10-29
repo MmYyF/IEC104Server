@@ -11,20 +11,46 @@ using IEC104.Core.CS101;
 namespace IEC104.App.Services
 {
     /// <summary>
-    /// 工作区（工程文件）的存取。
+    /// 工程文件（<c>.iec104proj</c>）的存取。
     ///
-    /// 复刻说明：对应原程序的 OpenWorkspace / SaveWorkspace 命令。
-    /// 现场用法是把"端口 + 从站 + 点表"整体存成一个文件，下次直接打开，
-    /// 不用每次重新配几十上百个点。
+    /// 【1.10 从"工作区"正名为"工程"】
+    /// 存的还是同一棵树 —— 通道（端口/链路参数/三种地址长度）→ 从站（公共地址）→
+    /// 信号（地址/名称/ASDU 类型/初始值/最后值）。改名是因为用户的心智模型是
+    /// "一个工程 = 一套变电站配置"，而"工作区"听起来像 IDE 的临时目录。
     ///
-    /// 为什么不用二进制序列化：工作区是给人看、可以手工改、可以进版本库的，
-    /// 用 JSON 最省事；ASDU 类型保存成枚举名（如 M_SP_NA_1）而不是数字，
-    /// 这样即使以后枚举顺序调整，老文件也不会串类型。
+    /// 【两个值字段：InitValue 与 Value】
+    ///   · <c>InitValue</c> —— 初始值，编辑信号时填的，是「按初始值复位」的基准；
+    ///   · <c>Value</c>     —— 最后一次写盘时界面上显示的值。
+    /// 为什么两个都存：打开工程时希望"看起来和上次一样"（用 Value），
+    /// 但联调完交出去之前又需要能一键回到设计值（用 InitValue）。
+    ///
+    /// 【品质位不存】
+    /// 无效/闭锁/取代是运行态开关。存进去会变成"一打开工程就是闭锁状态"，
+    /// 那不是配置，是上一次调试的残留，反而让人困惑。打开时一律复位为 false。
+    ///
+    /// 【为什么用 JSON】
+    /// 工程文件要给人看、能手工改、能进版本库。ASDU 类型保存成枚举名（M_SP_NA_1）
+    /// 而不是数字，这样以后枚举顺序调整，老文件也不会串类型。
     /// </summary>
-    public static class WorkspaceStore
+    public static class ProjectStore
     {
-        /// <summary>文件格式标识，用于打开时识别"这不是我们的工作区"</summary>
-        private const string FormatTag = "iec104-simulator-workspace";
+        /// <summary>文件格式标识（1.10 起）</summary>
+        public const string FormatTag = "iec104-simulator-project";
+
+        /// <summary>
+        /// 旧格式标识。1.9.x 及以前叫"工作区"，用 <c>.iec104ws</c>。
+        /// 必须继续认：现场手里有老文件的用户升级后要能直接打开，不能要求他先转换。
+        /// </summary>
+        public const string LegacyFormatTag = "iec104-simulator-workspace";
+
+        /// <summary>工程文件扩展名（含点）</summary>
+        public const string Extension = ".iec104proj";
+
+        /// <summary>旧扩展名，打开对话框的过滤器要一并接受</summary>
+        public const string LegacyExtension = ".iec104ws";
+
+        /// <summary>文件里的工程显示名（可与文件名不同），供打开后回填标题</summary>
+        public const string DefaultName = "未命名工程";
 
         /// <summary>
         /// 超过这个点位数就不再缩进排版。
@@ -66,7 +92,7 @@ namespace IEC104.App.Services
         }
 
         /// <summary>
-        /// 保存工作区。
+        /// 保存工程。
         ///
         /// 【1.9.7 内存优化：为什么不再 Serialize(对象树) —— 这一条是"大工程保存时卡死/闪退"的根因】
         /// 旧实现三步都是"整份物化"：
@@ -77,10 +103,9 @@ namespace IEC104.App.Services
         /// 峰值直接顶到 1.3 GB，32 位进程或内存吃紧的机器上就是 OutOfMemory。
         ///
         /// 现在直接用 <see cref="Utf8JsonWriter"/> 往文件流里写：不建 DTO 树、不拼字符串、
-        /// 不额外编码，额外占用是一块 64 KB 的写缓冲。字段名、字段顺序与原格式完全一致，
-        /// 老版本程序仍能打开新文件。
+        /// 不额外编码，额外占用是一块 64 KB 的写缓冲。
         /// </summary>
-        public static void Save(MainWindowViewModel viewModel, string path)
+        public static void Save(MainWindowViewModel viewModel, string path, string projectName)
         {
             bool indented = CountPoints(viewModel) <= IndentPointThreshold;
 
@@ -97,10 +122,12 @@ namespace IEC104.App.Services
             using (Utf8JsonWriter writer = new(stream, writerOptions))
             {
                 writer.WriteStartObject();
-                writer.WriteString(nameof(WorkspaceDocument.Format), FormatTag);
-                writer.WriteNumber(nameof(WorkspaceDocument.Version), 1);
-                writer.WriteString(nameof(WorkspaceDocument.SavedAt), DateTime.Now);
-                writer.WriteStartArray(nameof(WorkspaceDocument.Connections));
+                writer.WriteString(nameof(ProjectDocument.Format), FormatTag);
+                writer.WriteNumber(nameof(ProjectDocument.Version), 1);
+                writer.WriteString(nameof(ProjectDocument.Name),
+                    string.IsNullOrWhiteSpace(projectName) ? DefaultName : projectName);
+                writer.WriteString(nameof(ProjectDocument.SavedAt), DateTime.Now);
+                writer.WriteStartArray(nameof(ProjectDocument.Connections));
 
                 foreach (ConnectionViewModel connection in viewModel.Connections)
                 {
@@ -166,23 +193,11 @@ namespace IEC104.App.Services
                 writer.WriteNumber(nameof(PointDto.Address), point.ObjectAddress);
                 WriteStringIfNotNull(writer, nameof(PointDto.Name), point.Name);
                 writer.WriteString(nameof(PointDto.Type), TypeCodeOf(point.Type?.Type ?? TypeIdentifier.M_SP_NA_1));
-                writer.WriteNumber(nameof(PointDto.Value), point.Value);
 
-                // 品质位默认全 false，只写"是 true"的那几个：
-                // 一个点省三次 WriteBoolean（连同缩进/换行约 60 字节），
-                // 读侧 PointDto 的这个字段默认值就是 false，语义等价。
-                if (point.IsInvalid)
-                {
-                    writer.WriteBoolean(nameof(PointDto.Invalid), true);
-                }
-                if (point.IsBlocked)
-                {
-                    writer.WriteBoolean(nameof(PointDto.Blocked), true);
-                }
-                if (point.IsSubstituted)
-                {
-                    writer.WriteBoolean(nameof(PointDto.Substituted), true);
-                }
+                // 顺序固定：先初始值，后最后值。两个字段都是必写的（不像品质位只在 true 时写），
+                // 因为 0 也是一个合法取值，省略会让读侧分不清"没这个字段"和"值就是 0"。
+                writer.WriteNumber(nameof(PointDto.InitValue), point.InitValue);
+                writer.WriteNumber(nameof(PointDto.Value), point.Value);
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();
@@ -200,26 +215,30 @@ namespace IEC104.App.Services
         }
 
         /// <summary>
-        /// 载入工作区。
+        /// 载入工程，返回点位数。
         /// 采用的是"先清空再重建"：直接把对象树整体换掉，避免旧点位残留在协议层索引里。
         ///
         /// 1.9.7：改成直接从文件流反序列化。旧实现 <c>File.ReadAllText</c> 会先把
         /// 整份 JSON 读成一个字符串（252 MB 的 UTF-8 在 .NET 里是 252M 个 char ≈ 500 MB 堆），
-        /// 再交给反序列化器——光这一步就让"打开大工作区"多占半 GB。
+        /// 再交给反序列化器——光这一步就让"打开大工程"多占半 GB。
         /// </summary>
-        public static int Load(MainWindowViewModel viewModel, string path)
+        /// <param name="documentName">回传文件里记录的工程名（可能为 null，调用方自行回落）</param>
+        public static int Load(MainWindowViewModel viewModel, string path, out string documentName)
         {
-            WorkspaceDocument document;
+            ProjectDocument document;
             using (FileStream stream = new(
                 path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.SequentialScan))
             {
-                document = JsonSerializer.Deserialize<WorkspaceDocument>(stream, Options)
-                    ?? throw new InvalidDataException("工作区文件为空或格式不正确。");
+                document = JsonSerializer.Deserialize<ProjectDocument>(stream, Options)
+                    ?? throw new InvalidDataException("工程文件为空或格式不正确。");
             }
 
-            if (!string.Equals(document.Format, FormatTag, StringComparison.Ordinal))
+            // 两种标识都放行：老文件是 "...-workspace"。格式本身没变（字段一直是兼容添加的），
+            // 所以不需要转换，读进来即可；下次保存会自动写成新标识。
+            if (!string.Equals(document.Format, FormatTag, StringComparison.Ordinal)
+                && !string.Equals(document.Format, LegacyFormatTag, StringComparison.Ordinal))
             {
-                throw new InvalidDataException("该文件不是 IEC104 仿真器的工作区文件。");
+                throw new InvalidDataException("该文件不是 IEC104 仿真器的工程文件。");
             }
 
             // 先停掉并断开所有连接，否则旧 socket 还挂在旧从站上
@@ -229,6 +248,7 @@ namespace IEC104.App.Services
             }
             viewModel.Connections.Clear();
 
+            documentName = document.Name;
             int pointCount = 0;
             foreach (ConnectionDto connectionDto in document.Connections ?? new List<ConnectionDto>())
             {
@@ -247,7 +267,7 @@ namespace IEC104.App.Services
                     T1Seconds = connectionDto.T1Seconds,
                     T2Seconds = connectionDto.T2Seconds,
                     T3Seconds = connectionDto.T3Seconds,
-                    // 老工作区文件里没有这三个字段（反序列化后是 0），
+                    // 老文件里没有这三个字段（反序列化后是 0），
                     // 0 不是合法宽度，落到默认值 2/2/3 即可，不能直接塞进去
                     CauseOfTransmissionLength = IsValidLength(connectionDto.CauseOfTransmissionLength, 1, 2)
                         ? connectionDto.CauseOfTransmissionLength : 2,
@@ -268,7 +288,7 @@ namespace IEC104.App.Services
                     // 性能（第十二轮改）：原来是一个点一次 slave.AddPoint(...)。
                     // 单点入口内部会发一次集合 Reset，而 Reset 会触发主窗口重建标签页
                     // （RebuildPointTabs 要遍历整张点表）——20 万点就是 20 万次整表遍历，
-                    // 打开工作区直接变成"打不开"。现在先攒成 PointDraft 列表，
+                    // 打开工程直接变成"打不开"。现在先攒成 PointDraft 列表，
                     // 一台从站只调一次 AddPoints，只发一次 Reset。
                     List<PointDto> pointDtos = slaveDto.Points ?? new List<PointDto>();
                     List<PointDraft> drafts = new(pointDtos.Count);
@@ -278,14 +298,16 @@ namespace IEC104.App.Services
                     foreach (PointDto pointDto in pointDtos)
                     {
                         // 文件里万一有重号，先在这里剔掉：AddPoints 会跳过重号，
-                        // 跳过后两个列表的下标就对不上了，品质位会串到别的点上
+                        // 跳过后两个列表的下标就对不上了
                         if (!seen.Add(pointDto.Address))
                         {
                             continue;
                         }
 
+                        // 用 Value（最后值）建点，打开后的画面和上次退出时一致
                         drafts.Add(new PointDraft(
-                            pointDto.Address, ParseType(pointDto.Type), pointDto.Name ?? string.Empty, pointDto.Value));
+                            pointDto.Address, ParseType(pointDto.Type), pointDto.Name ?? string.Empty,
+                            EffectiveValue(pointDto)));
                         accepted.Add(pointDto);
                     }
 
@@ -294,12 +316,8 @@ namespace IEC104.App.Services
                     for (int index = 0; index < apply; index++)
                     {
                         PointDto pointDto = accepted[index];
-                        PointViewModel point = created[index];
-
-                        // 品质位单独赋，走的是和界面一样的路径，保证协议层同步
-                        point.IsInvalid = pointDto.Invalid;
-                        point.IsBlocked = pointDto.Blocked;
-                        point.IsSubstituted = pointDto.Substituted;
+                        // 初始值单独赋：它是复位基准，不参与"变位"判定，所以放在建点之后写
+                        created[index].InitValue = EffectiveInitValue(pointDto);
                         pointCount++;
                     }
 
@@ -315,7 +333,19 @@ namespace IEC104.App.Services
             return pointCount;
         }
 
-        /// <summary>类型名解析失败时退回单点遥信，至少不让整份工作区打不开</summary>
+        /// <summary>
+        /// 最后值：用 Value。老文件里 Value 与初始值是同一个字段，
+        /// 直接拿来当"上次显示的值"正好。
+        /// </summary>
+        private static double EffectiveValue(PointDto dto) => dto.Value;
+
+        /// <summary>
+        /// 初始值：新文件读 InitValue；老文件没有这个字段（null）就回落到 Value。
+        /// 回落而不是给 0——否则老工程一打开，"按初始值复位"会把所有点清零。
+        /// </summary>
+        private static double EffectiveInitValue(PointDto dto) => dto.InitValue ?? dto.Value;
+
+        /// <summary>类型名解析失败时退回单点遥信，至少不让整份工程打不开</summary>
         private static TypeIdentifier ParseType(string name)
         {
             return Enum.TryParse(name, out TypeIdentifier type) ? type : TypeIdentifier.M_SP_NA_1;
@@ -328,16 +358,20 @@ namespace IEC104.App.Services
         private static bool IsValidLength(int value, int min, int max) => value >= min && value <= max;
 
         // 说明：1.9.7 起不再有 ToDto(ConnectionViewModel) / ToDto(SlaveViewModel)。
-        // 那两条把整个对象树物化成 DTO 列表的路径，正是"大工作区保存时内存翻倍"的来源。
+        // 那两条把整个对象树物化成 DTO 列表的路径，正是"大工程保存时内存翻倍"的来源。
         // 现在写盘走 Utf8JsonWriter 直接遍历 ViewModel（见 Save / WriteConnection / WriteSlave），
         // DTO 类本身保留 —— 它们仍是反序列化的目标类型，也是磁盘格式的唯一定义。
 
         // ── 磁盘格式 ────────────────────────────────────────────
 
-        internal sealed class WorkspaceDocument
+        internal sealed class ProjectDocument
         {
             public string Format { get; set; }
             public int Version { get; set; }
+
+            /// <summary>工程显示名（1.10 新增）。老文件没有 → null，调用方回落到文件名</summary>
+            public string Name { get; set; }
+
             public DateTime SavedAt { get; set; }
             public List<ConnectionDto> Connections { get; set; }
         }
@@ -380,10 +414,16 @@ namespace IEC104.App.Services
             public int Address { get; set; }
             public string Name { get; set; }
             public string Type { get; set; }
+
+            /// <summary>
+            /// 初始值（1.10 新增）。可空是刻意的：老文件里没有这个字段，
+            /// 反序列化得到 null，读侧据此回落到 <see cref="Value"/>。
+            /// 做成非空 double 就无法区分"没有这个字段"和"初始值就是 0"。
+            /// </summary>
+            public double? InitValue { get; set; }
+
+            /// <summary>最后一次写盘时界面显示的值</summary>
             public double Value { get; set; }
-            public bool Invalid { get; set; }
-            public bool Blocked { get; set; }
-            public bool Substituted { get; set; }
         }
     }
 }

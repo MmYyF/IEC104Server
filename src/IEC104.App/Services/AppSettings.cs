@@ -96,6 +96,61 @@ namespace IEC104.App.Services
         /// 但用户一旦习惯按大类看，就没有理由每次启动都给他翻回去。
         /// </summary>
         public bool PointsGroupByCategory { get; set; }
+
+        // ── 工程相关（1.10）────────────────────────────────────
+        //
+        // 注意：这里存的是"这台机器上打开过什么工程"，不是工程内容本身。
+        // 工程内容在 .iec104proj 文件里，跟着文件走；下面这几项跟着人走。
+
+        /// <summary>
+        /// 启动时是否先显示欢迎页。
+        ///
+        /// 默认**开**：工程会自动恢复（左侧从站列表已经有内容），但主区域先停在欢迎页，
+        /// 让用户决定"继续改上个工程"还是"新建/打开别的"。关掉这个开关，
+        /// 启动就直接进上次工程的点表。
+        /// </summary>
+        public bool ShowWelcomeOnStartup { get; set; } = true;
+
+        /// <summary>上次打开的工程路径，启动时据此自动恢复</summary>
+        public string LastProjectPath { get; set; }
+
+        /// <summary>最近打开的工程（最多 <see cref="MaxRecentProjects"/> 条，最新的在最前）</summary>
+        public List<RecentProjectDto> RecentProjects { get; set; } = new();
+
+        /// <summary>
+        /// 自动保存开关（1.10）。
+        /// 只控制"结构改动"要不要在编辑过程中自动落盘；信号值不受它控制——
+        /// 值的变化只要停下来就会自动写一次（见 ValueSaveDelaySeconds）。
+        /// </summary>
+        public bool AutoSaveEnabled { get; set; }
+
+        /// <summary>结构改动停止操作后多久自动保存（秒）</summary>
+        public int AutoSaveDelaySeconds { get; set; } = 5;
+
+        /// <summary>
+        /// 值停止变化多久后落盘（秒）。
+        ///
+        /// 这是"只保存最后一次值"的实现方式：每次值变化都重置计时器，
+        /// 缓变驱动每秒改一次的话计时器永远不到期，全程零写盘；
+        /// 人一停手，N 秒后写一次。
+        /// </summary>
+        public int ValueSaveDelaySeconds { get; set; } = 5;
+
+        /// <summary>两次写盘之间的最小间隔（秒），防连续微调时反复写</summary>
+        public int MinSaveIntervalSeconds { get; set; } = 3;
+
+        /// <summary>最近工程列表的条数上限</summary>
+        public const int MaxRecentProjects = 5;
+    }
+
+    /// <summary>最近工程列表里的一条（磁盘格式）</summary>
+    public sealed class RecentProjectDto
+    {
+        public string Path { get; set; }
+
+        public string Name { get; set; }
+
+        public DateTime LastOpenedAt { get; set; }
     }
 
     /// <summary>
@@ -259,6 +314,86 @@ namespace IEC104.App.Services
         /// <summary>通知外部"设置变了"（保存后调用）</summary>
         public static void NotifyChanged() => Changed?.Invoke();
 
+        // ── 工程历史（1.10）────────────────────────────────────
+
+        /// <summary>
+        /// 记住"这个工程被打开/保存过"：更新 LastProjectPath 与最近列表。
+        /// 写盘失败不影响主流程（工程本身已经存好了），只是下次启动恢复不了。
+        /// </summary>
+        public static void RememberProject(string path, string name)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
+
+            Current.LastProjectPath = path;
+
+            List<RecentProjectDto> recent = Current.RecentProjects ??= new List<RecentProjectDto>();
+
+            // 同一个文件只留最新一条：按路径去重（忽略大小写，Windows 上同一文件可能大小写不同）
+            recent.RemoveAll(item => item != null && string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase));
+            recent.Insert(0, new RecentProjectDto
+            {
+                Path = path,
+                Name = string.IsNullOrWhiteSpace(name) ? System.IO.Path.GetFileNameWithoutExtension(path) : name,
+                LastOpenedAt = DateTime.Now
+            });
+
+            // 裁掉多余的：列表在欢迎页上展示，撑长了两屏也放不下
+            while (recent.Count > AppSettings.MaxRecentProjects)
+            {
+                recent.RemoveAt(recent.Count - 1);
+            }
+
+            Save();
+        }
+
+        /// <summary>
+        /// 忘掉"当前工程"（关闭工程、或上次的工程文件已经不存在了）。
+        /// 只清 LastProjectPath，**不动最近列表**——用户可能只是关掉当前这个，
+        /// 下次还想从最近列表里点开，把历史一并清了反而添乱。
+        /// </summary>
+        public static void ForgetCurrentProject()
+        {
+            if (string.IsNullOrEmpty(Current.LastProjectPath))
+            {
+                return;
+            }
+
+            Current.LastProjectPath = null;
+            Save();
+        }
+
+        /// <summary>从最近列表里剔掉一条（点开时发现文件已不存在）</summary>
+        public static void RemoveRecentProject(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || Current.RecentProjects == null)
+            {
+                return;
+            }
+
+            int removed = Current.RecentProjects.RemoveAll(
+                item => item != null && string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase));
+
+            if (removed > 0)
+            {
+                if (string.Equals(Current.LastProjectPath, path, StringComparison.OrdinalIgnoreCase))
+                {
+                    Current.LastProjectPath = null;
+                }
+
+                Save();
+            }
+        }
+
+        /// <summary>清空最近列表</summary>
+        public static void ClearRecentProjects()
+        {
+            Current.RecentProjects = new List<RecentProjectDto>();
+            Save();
+        }
+
         private static void Normalize(AppSettings settings)
         {
             settings.CustomAsduTypes ??= new List<CustomAsduTypeDto>();
@@ -279,6 +414,35 @@ namespace IEC104.App.Services
             {
                 settings.TrafficBufferLimit = 50000;
             }
+
+            // 工程相关的三个秒数：夹到合理区间，别让手改坏的配置文件把程序变成"每秒写一次盘"
+            settings.AutoSaveDelaySeconds = Math.Clamp(settings.AutoSaveDelaySeconds, 3, 60);
+            settings.ValueSaveDelaySeconds = Math.Clamp(settings.ValueSaveDelaySeconds, 3, 60);
+            settings.MinSaveIntervalSeconds = Math.Clamp(settings.MinSaveIntervalSeconds, 1, 60);
+
+            // 最近工程：去掉空条目和重复路径，再裁到上限
+            settings.RecentProjects ??= new List<RecentProjectDto>();
+            List<RecentProjectDto> recent = new(settings.RecentProjects.Count);
+            HashSet<string> seenPaths = new(StringComparer.OrdinalIgnoreCase);
+            foreach (RecentProjectDto item in settings.RecentProjects)
+            {
+                if (item == null || string.IsNullOrWhiteSpace(item.Path))
+                {
+                    continue;
+                }
+
+                if (!seenPaths.Add(item.Path))
+                {
+                    continue;
+                }
+
+                recent.Add(item);
+                if (recent.Count >= AppSettings.MaxRecentProjects)
+                {
+                    break;
+                }
+            }
+            settings.RecentProjects = recent;
         }
 
         private static TEnum ParseEnum<TEnum>(string value, TEnum fallback) where TEnum : struct, Enum

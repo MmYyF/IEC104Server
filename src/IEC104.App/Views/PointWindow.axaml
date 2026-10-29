@@ -39,9 +39,9 @@
       <Separator />
 
       <StackPanel Orientation="Horizontal" Spacing="6">
-        <TextBlock Text="当前值" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}"
+        <TextBlock Text="初始值" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}"
                    VerticalAlignment="Center" />
-        <views:HintIcon Tip="遥信建议填 0/1（双点用 1=分、2=合）；遥测填工程值；档位与累计量（遥脉）填整数。修改后若通道已启动，会立即自发上送（COT=3）。" />
+        <views:HintIcon Tip="这里填的是初始值（复位基准），不是运行中的当前值：改完点确定，当前值也会同步成这个数。遥信建议填 0/1（双点用 1=分、2=合）；遥测填工程值；档位与累计量（遥脉）填整数。想让所有信号回到设计值，用点表右键的「按初始值复位」。" />
       </StackPanel>
       <Grid ColumnDefinitions="110,*" RowDefinitions="Auto">
         <TextBlock Grid.Row="0" Grid.Column="0" Text="值" VerticalAlignment="Center" />

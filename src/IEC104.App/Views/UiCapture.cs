@@ -185,6 +185,10 @@ namespace IEC104.App.Views
             // 验证第十七轮：工具条 11 颗图标是否真的"一个墨色、一个比例尺"
             RunToolbarIconSelfCheck(dir, mainWindow);
 
+            // 前面的双击/滚轮检查会真的改点表，这里先把"脏"清成干净基线：
+            // 主题刷新与保存按钮三态两条断言量的都是"没有改动"的样子
+            viewModel.ClearDirtyState();
+
             // 验证第八轮的多主题：五套主题逐个切，对比度全部过 WCAG AA
             await RunThemeSelfCheckAsync(dir, mainWindow, viewModel);
 
@@ -196,6 +200,8 @@ namespace IEC104.App.Views
 
             // 验证第十轮：菜单圆角+图标、主题弹窗、标题栏仓库/更新按钮
             RunMenuPolishSelfCheck(dir, mainWindow);
+
+            viewModel.ClearDirtyState();
 
             // 验证第十一轮：窗口图标、菜单图标清晰度/对齐/配色、关于窗口、标题栏垂直居中
             RunAppearanceSelfCheck(dir, mainWindow);
@@ -226,6 +232,12 @@ namespace IEC104.App.Views
             // 验证设置界面：入口按钮、左标签栏 + 右内容、自定义 ASDU 类型增删与落盘、点表显示中文名
             // 放最后：它会临时把主界面切成设置界面再切回来，前面那些要读工作区几何的断言不能被打断
             await RunSettingsSelfCheckAsync(dir, mainWindow, viewModel);
+
+            viewModel.ClearDirtyState();
+
+            // 验证 1.10 工程化：保存按钮三态、工程存读、初始值语义、欢迎页两态
+            // （必须最后跑：它最后会关闭工程、清空通道与从站）
+            await RunProjectSelfCheckAsync(dir, mainWindow, viewModel);
 
             Log(dir, "done");
             Console.WriteLine("[ui-capture] done -> " + dir);
@@ -990,10 +1002,21 @@ namespace IEC104.App.Views
                 .OfType<Border>()
                 .FirstOrDefault(border => border.Classes.Contains("toolbar"));
 
-            List<MenuGlyph> glyphs = toolbar?.GetVisualDescendants()
+            List<MenuGlyph> allGlyphs = toolbar?.GetVisualDescendants()
                 .OfType<MenuGlyph>()
                 .Where(glyph => glyph.Classes.Contains("toolIcon"))
                 .ToList() ?? new List<MenuGlyph>();
+
+            // 1.10：工具条最左多了一颗**保存**图标按钮。它不是"整排一个墨色"里的成员——
+            // 它是全场唯一会变状态的图标（无改动=TextDisabled / 有改动=主题主色 /
+            // 写盘中=禁用）。混进下面三条断言里必然红，所以先剔出去，
+            // 它自己那套断言在 RunProjectSelfCheck 里（toolbar-save-*）。
+            MenuGlyph saveGlyph = mainWindow.FindControl<Button>("ToolbarSaveButton")?
+                .GetVisualDescendants()
+                .OfType<MenuGlyph>()
+                .FirstOrDefault(glyph => glyph.Classes.Contains("toolIcon"));
+
+            List<MenuGlyph> glyphs = allGlyphs.Where(glyph => !ReferenceEquals(glyph, saveGlyph)).ToList();
 
             // ① 数量与控件类型
             //
@@ -5404,6 +5427,208 @@ namespace IEC104.App.Views
                 try { channel.Close(); } catch { /* 已关闭 */ }
                 viewModel.Connections.Remove(channel);
                 channel.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// 自检（1.10 工程化）：工具条保存按钮三态、工程存读往返、初始值语义、欢迎页两态。
+        ///
+        /// 为什么排在最后跑：它会真的建一个工程、改结构、最后再关闭工程（清空通道/从站），
+        /// 前面那些依赖演示点表的断言不能被它打乱。
+        /// </summary>
+        private static async Task RunProjectSelfCheckAsync(string dir, Window mainWindow, MainWindowViewModel viewModel)
+        {
+            string workDir = Path.Combine(dir, "project");
+            System.IO.Directory.CreateDirectory(workDir);
+            string projectPath = Path.Combine(workDir, "自检工程.iec104proj");
+
+            try
+            {
+                // ── ① 保存按钮：必须独占工具条最左 ──
+                Button saveButton = mainWindow.FindControl<Button>("ToolbarSaveButton");
+                Border toolbar = mainWindow.GetVisualDescendants()
+                    .OfType<Border>()
+                    .FirstOrDefault(border => border.Classes.Contains("toolbar"));
+                StackPanel strip = toolbar?.Child as StackPanel;
+                bool leftmost = strip != null && strip.Children.Count > 0
+                    && ReferenceEquals(strip.Children[0], saveButton);
+
+                MenuGlyph saveGlyph = saveButton?.GetVisualDescendants()
+                    .OfType<MenuGlyph>()
+                    .FirstOrDefault();
+
+                bool sizeOk = saveButton != null
+                    && Math.Abs(saveButton.Bounds.Width - 28) <= 0.6
+                    && Math.Abs(saveButton.Bounds.Height - 28) <= 0.6
+                    && saveGlyph != null
+                    && Math.Abs(saveGlyph.Bounds.Width - 16) <= 0.6;
+
+                Log(dir, $"toolbar-save-button: 最左={leftmost} "
+                    + $"按钮={saveButton?.Bounds.Width:0.#}×{saveButton?.Bounds.Height:0.#} "
+                    + $"图标={saveGlyph?.Bounds.Width:0.#}（期望 28×28 / 图标 16） => "
+                    + (leftmost && sizeOk ? "PASS" : "FAIL"));
+
+                // ── ② 主色必须跟着主题走：六套主题两两不同，且与工具条底色对比度 ≥ 3.0 ──
+                //    非文字元素按 WCAG 的图形标准 3:1，不是文字的 4.5:1
+                string restoreId = ThemeService.Current?.Id;
+                List<string> primarySet = new List<string>();
+                double worstPrimary = double.MaxValue;
+                foreach (AppThemeOption option in ThemeService.Options)
+                {
+                    ThemeService.Apply(option.Id, persist: false);
+                    Dispatcher.UIThread.RunJobs();
+
+                    Color primary = ReadThemeColor("PrimaryBrush");
+                    if (!primarySet.Contains(primary.ToString()))
+                    {
+                        primarySet.Add(primary.ToString());
+                    }
+
+                    double ratio = ContrastRatio(primary, ReadThemeColor("SurfaceAltBrush"));
+                    if (ratio < worstPrimary)
+                    {
+                        worstPrimary = ratio;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(restoreId))
+                {
+                    ThemeService.Apply(restoreId, persist: false);
+                    Dispatcher.UIThread.RunJobs();
+                }
+
+                bool themeOk = primarySet.Count == ThemeService.Options.Count && worstPrimary >= 3.0;
+                Log(dir, $"toolbar-save-theme-color: 不同主色={primarySet.Count}/{ThemeService.Options.Count} "
+                    + $"最差对比度={worstPrimary:0.00}:1（≥3.0） => " + (themeOk ? "PASS" : "FAIL"));
+
+                // ── ③ 三态：无工程=TextDisabled / 有改动=主色 / 保存后回到 TextDisabled ──
+                Color wantIdle = ReadThemeColor("TextDisabledBrush");
+                Color wantDirty = ReadThemeColor("PrimaryBrush");
+
+                Color idleInk = (saveGlyph?.Stroke as ISolidColorBrush)?.Color ?? Colors.Transparent;
+                bool idleOk = idleInk == wantIdle && !viewModel.CanSaveProject;
+
+                // 真的落一个工程文件出来（不新建空工程：直接把手上的演示数据存成工程，
+                // 这样后面所有断言都有真实点表可用）
+                viewModel.SaveProjectTo(projectPath, "自检工程");
+                Dispatcher.UIThread.RunJobs();
+
+                bool fileOk = System.IO.File.Exists(projectPath)
+                    && viewModel.HasProject
+                    && System.IO.Path.GetFileName(viewModel.CurrentProjectPath) == "自检工程.iec104proj";
+
+                // 改结构 → 按钮亮主色
+                viewModel.MarkStructureDirty();
+                Dispatcher.UIThread.RunJobs();
+                Color dirtyInk = (saveGlyph?.Stroke as ISolidColorBrush)?.Color ?? Colors.Transparent;
+                bool dirtyOk = viewModel.IsProjectDirty && viewModel.CanSaveProject && dirtyInk == wantDirty;
+
+                bool saved = viewModel.SaveProject();
+                Dispatcher.UIThread.RunJobs();
+                Color afterInk = (saveGlyph?.Stroke as ISolidColorBrush)?.Color ?? Colors.Transparent;
+                bool idleBack = saved && !viewModel.IsProjectDirty && afterInk == wantIdle;
+
+                Log(dir, $"toolbar-save-states: 无工程={idleOk}({idleInk}) 落盘={fileOk} "
+                    + $"改动={dirtyOk}({dirtyInk} 期望 {wantDirty}) 存后={idleBack}({afterInk}) => "
+                    + (idleOk && fileOk && dirtyOk && idleBack ? "PASS" : "FAIL"));
+
+                // ── ④ 初始值语义：SetValue 不许污染 InitValue；复位回到初始值 ──
+                SlaveViewModel slave = viewModel.Connections
+                    .SelectMany(connection => connection.Slaves)
+                    .FirstOrDefault(candidate => candidate.Points.Count > 0);
+                PointViewModel point = slave?.Points.FirstOrDefault();
+
+                bool initKept = false;
+                bool resetOk = false;
+                bool persisted = false;
+
+                if (point != null)
+                {
+                    point.InitValue = 42;
+                    point.Value = 7.5;
+                    initKept = point.InitValue.Equals(42.0) && point.Value.Equals(7.5);
+
+                    // 存一次，让"初始值 + 最后值"两个字段都落盘
+                    viewModel.SaveProject();
+                    string json = System.IO.File.ReadAllText(projectPath);
+                    persisted = json.Contains(ProjectStore.FormatTag)
+                        && json.Contains("\"InitValue\": 42")
+                        && json.Contains("\"Value\": 7.5");
+
+                    // 复位：选中该从站、不选点 → 整站复位
+                    viewModel.SelectedSlave = slave;
+                    viewModel.SelectedPoint = null;
+                    int reset = viewModel.ResetPointsToInitValue();
+                    resetOk = reset == slave.Points.Count
+                        && slave.Points.All(item => item.Value.Equals(item.InitValue));
+                }
+
+                Log(dir, $"project-init-value: 改值不动初始值={initKept} "
+                    + $"双字段落盘={persisted} 整站复位={resetOk}({slave?.Points.Count} 点) => "
+                    + (initKept && persisted && resetOk ? "PASS" : "FAIL"));
+
+                // ── ⑤ 欢迎页两态（工程已恢复 / 没有工程） ──
+                bool stateBTitle = viewModel.WelcomeTitle == "当前工程";
+                viewModel.IsWelcomeVisible = true;
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(350);
+                Save(mainWindow, Path.Combine(dir, "41-欢迎页-已恢复工程.png"));
+
+                bool recentOk = viewModel.HasRecentProjects
+                    && viewModel.RecentProjects.Any(item => item.Path == projectPath);
+                bool editorHidden = !viewModel.IsEditorVisible;
+
+                Log(dir, $"welcome-state-b: 标题=\"{viewModel.WelcomeTitle}\" 编辑区隐藏={editorHidden} "
+                    + $"最近={viewModel.RecentProjects.Count} 当前工程在列表里={recentOk} => "
+                    + (stateBTitle && editorHidden && recentOk ? "PASS" : "FAIL"));
+
+                // 退出路径 1：继续编辑
+                viewModel.DismissWelcomeCommand.Execute(null);
+                Dispatcher.UIThread.RunJobs();
+                bool dismissed = !viewModel.IsWelcomeVisible;
+
+                // 关闭工程 → 回到 State A
+                viewModel.CloseProject();
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(350);
+                Save(mainWindow, Path.Combine(dir, "42-欢迎页-没有工程.png"));
+
+                bool stateA = !viewModel.HasProject
+                    && viewModel.IsWelcomeVisible
+                    && viewModel.WelcomeTitle == "还没有打开工程";
+
+                Log(dir, $"welcome-state-a: 继续编辑可收起={dismissed} 关工程后标题=\"{viewModel.WelcomeTitle}\" "
+                    + $"有工程={viewModel.HasProject} 欢迎页可见={viewModel.IsWelcomeVisible} => "
+                    + (dismissed && stateA ? "PASS" : "FAIL"));
+
+                // ── ⑥ 未命名工程：没有工程文件时改结构，也必须算脏、也能存 ──
+                //    这条防的是"欢迎页上直接建从站，改完发现存不了"——按钮灰着、
+                //    状态栏不提示、关窗口也不问，改动会静悄悄丢掉。
+                viewModel.IsWelcomeVisible = true;
+                Dispatcher.UIThread.RunJobs();
+                viewModel.MarkStructureDirty();
+                Dispatcher.UIThread.RunJobs();
+
+                bool unnamed = !viewModel.HasProject
+                    && viewModel.IsProjectDirty
+                    && viewModel.CanSaveProject
+                    && viewModel.ShowSaveState
+                    && !viewModel.IsWelcomeVisible
+                    && viewModel.WindowTitle.StartsWith("●")
+                    && (saveGlyph?.Stroke as ISolidColorBrush)?.Color == wantDirty;
+
+                Log(dir, $"project-unnamed: 无文件也算脏={viewModel.IsProjectDirty} 可保存={viewModel.CanSaveProject} "
+                    + $"状态栏提示={viewModel.ShowSaveState} 欢迎页收起={!viewModel.IsWelcomeVisible} "
+                    + $"标题=\"{viewModel.WindowTitle}\" 按钮亮主色={((saveGlyph?.Stroke as ISolidColorBrush)?.Color == wantDirty)} => "
+                    + (unnamed ? "PASS" : "FAIL"));
+
+                // 收尾：把"未命名工程 + 脏"的状态清掉，别把现场留给后续/退出流程
+                viewModel.CloseProject();
+                Dispatcher.UIThread.RunJobs();
+            }
+            catch (Exception exception)
+            {
+                Log(dir, $"project-self-check: 异常 {exception.GetType().Name}: {exception.Message} => FAIL");
             }
         }
 

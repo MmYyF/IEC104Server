@@ -143,6 +143,38 @@ namespace IEC104.App.ViewModels
             }
         }
 
+        /// <summary>
+        /// 初始值（1.10）—— 工程里保存的设计值，「按初始值复位」的基准。
+        ///
+        /// 和 <see cref="Value"/> 的区别：Value 是运行态（改了就上送、就置"值脏"），
+        /// InitValue 是配置（改了置"结构脏"、要写进工程文件）。
+        /// 所以这个 setter 不碰协议层、不发报文，只标脏。
+        /// </summary>
+        public double InitValue
+        {
+            get => _point.InitValue;
+            set
+            {
+                if (_point.InitValue.Equals(value))
+                {
+                    return;
+                }
+
+                _point.InitValue = value;
+                OnPropertyChanged();
+            }
+        }
+
+        /// <summary>
+        /// 按初始值复位：把当前值改回 <see cref="InitValue"/>。
+        /// 走 <see cref="Value"/> 的 setter，所以会自动上送变位——这正是复位想看到的效果
+        /// （主站那边应该收到"值变回去了"，而不是界面偷偷改掉）。
+        /// </summary>
+        public void ResetToInitValue()
+        {
+            Value = _point.InitValue;
+        }
+
         /// <summary>值的显示文本：遥信用"合/分"，遥测保留 3 位小数</summary>
         public string ValueText
         {

@@ -539,6 +539,72 @@
     <Setter Property="Background" Value="{DynamicResource PrimaryHoverBrush}" />
   </Style>
 
+  <!-- ══ 欢迎页（1.10）══
+       配色只用三类令牌：墨色（TextPrimary）说正事、次要灰（TextSecondary）说细节、
+       主色（Primary）说"这里可以点"。六套主题各自有主色，欢迎页跟着自动变，
+       不需要按主题写分支——这和工具条保存按钮是同一套做法。 -->
+  <Style Selector="TextBlock.welcomeTitle">
+    <Setter Property="FontSize" Value="18" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+
+  <!-- 有工程时，同一行文字降级成"当前工程"小字：主角让给下面的工程名。
+       不新起一个 TextBlock 是为了让两态共用同一段 XAML，切换工程的那一刻
+       连文字都不需要换控件，只换字号和颜色。 -->
+  <Style Selector="TextBlock.welcomeTitle.eyebrow">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+  </Style>
+
+  <Style Selector="TextBlock.welcomeProject">
+    <Setter Property="FontSize" Value="22" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+
+  <Style Selector="TextBlock.welcomeSubtitle">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+  </Style>
+
+  <Style Selector="TextBlock.welcomeSection">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+  </Style>
+
+  <!-- 次要按钮（新建工程 / 打开工程…）：
+       有底有边、比主按钮矮一档——欢迎页的主角是「继续编辑」，这两个是备选动作 -->
+  <Style Selector="Button.welcomeSecondary">
+    <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    <Setter Property="Padding" Value="16,7" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.welcomeSecondary:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource HoverBrush}" />
+  </Style>
+
+  <!-- 最近使用里的一行：整行都可点，平时透明、悬停才浮出浅主色底。
+       用 Button 而不是 ListBoxItem，是因为它就只有一个"点了打开"的动作，
+       不需要选中态——带选中态反而会留下一条不知从哪来的高亮。 -->
+  <Style Selector="Button.welcomeRecent">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="10,7" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.welcomeRecent:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+  </Style>
+
   <!-- 面板 -->
   <Style Selector="Border.panel">
     <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
@@ -604,6 +670,13 @@
   <Style Selector="TextBlock.hint">
     <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
     <Setter Property="FontSize" Value="11" />
+  </Style>
+
+  <!-- 状态栏的"未保存"：和工具条保存按钮亮起是同一个信号（主色），
+       半粗一档，让它在一条灰字里能被扫到；保存完变回普通灰字 -->
+  <Style Selector="TextBlock.hint.saveState.dirty">
+    <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
   </Style>
 
   <!-- ── 输入类控件：统一圆角 ──────────────────────────────────
@@ -1758,6 +1831,44 @@
     <Setter Property="Margin" Value="0,2,0,0" />
     <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
     <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+
+  <!-- ══ 工具条的文件区：图标按钮（1.10）══
+
+       为什么单独一类按钮：工具条那一排是"图标 + 文字"的复合按钮，宽约 80~100px；
+       文件区的保存只需要一格图标，用复合样式会白占 80px，正好把点表区挤出去。
+
+       三个状态全部走主题令牌，**切主题自动变，不写死色值**：
+         .idle  → TextDisabledBrush（比整排的 TextSecondaryBrush 更淡，表示"没东西可存"）
+         .dirty → PrimaryBrush（六套主题各有一个主色，这就是"图标跟随主题色"）
+       Button 的禁用态由 Avalonia 自己降透明度，这里不再叠第二层淡。 -->
+  <Style Selector="Button.toolIconOnly">
+    <Setter Property="Width" Value="28" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+
+  <Style Selector="Button.toolIconOnly:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+  </Style>
+
+  <!-- 有改动：主色。放在通用 toolIcon 之后，同优先级下后写者胜。 -->
+  <Style Selector="Button.toolIconOnly.dirty ctl|MenuGlyph.toolIcon">
+    <Setter Property="Stroke" Value="{DynamicResource PrimaryBrush}" />
+  </Style>
+
+  <Style Selector="Button.toolIconOnly.dirty:pointerover ctl|MenuGlyph.toolIcon">
+    <Setter Property="Stroke" Value="{DynamicResource PrimaryHoverBrush}" />
+  </Style>
+
+  <!-- 无改动：再淡一档 -->
+  <Style Selector="Button.toolIconOnly.idle ctl|MenuGlyph.toolIcon">
+    <Setter Property="Stroke" Value="{DynamicResource TextDisabledBrush}" />
   </Style>
 
 </Styles>

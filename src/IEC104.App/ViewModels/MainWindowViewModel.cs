@@ -62,6 +62,35 @@ namespace IEC104.App.ViewModels
         /// <summary>防止"行选中 → 从站选中 → 行选中"互相触发成环</summary>
         private bool _syncingSlaveSelection;
 
+        // ── 工程状态（1.10）────────────────────────────────────
+        //
+        // 两级"脏"要分清楚，它们的处理完全不同：
+        //   · 结构脏（IsProjectDirty）—— 点表定义改了。要在标题栏挂 ●，关闭时提示保存。
+        //   · 值脏（IsValueDirty）    —— 只是运行中的值变了。不挂 ●（仿真时值一直在变，
+        //                                标题上永远挂着个点会让人以为存不完），
+        //                                退出时静默保存。
+        // 两个都必须能落到磁盘，但只有结构脏值得打断用户。
+
+        /// <summary>当前工程的完整路径；null = 还没打开任何工程</summary>
+        private string _currentProjectPath;
+
+        /// <summary>工程显示名（来自文件里的 Name，缺省用文件名）</summary>
+        private string _currentProjectName;
+
+        private bool _isProjectDirty;
+        private bool _isValueDirty;
+        private bool _isSaving;
+        private bool _isWelcomeVisible;
+
+        /// <summary>
+        /// 抑制标记：载入/新建工程时集合会大量变动，那不算"用户改了东西"。
+        /// 不用这个标记的话，每打开一个工程就立刻变成"未保存"，用户会以为打开动作改了文件。
+        /// </summary>
+        private bool _suppressDirty;
+
+        /// <summary>最近一次写盘时间，状态栏显示"已保存 09:42"用</summary>
+        private DateTime? _lastSavedAt;
+
         public MainWindowViewModel()
         {
             // 视图偏好要在建任何列表之前定下来：LoadSampleData 会选中首个从站、
@@ -149,13 +178,97 @@ namespace IEC104.App.ViewModels
             // 批量建从站：一次生成多条"通道 + 从站"，解决"每个从站不同 IP"时的手工重复劳动
             BatchCreateSlaveCommand = new RelayCommand(() => ShowBatchCreateSlaveDialog?.Invoke());
 
-            LoadSampleData();
+            // ── 工程（1.10）──
+            SaveProjectCommand = new RelayCommand(() => SaveProject(), () => CanSaveProject);
+            CloseProjectCommand = new RelayCommand(() => ShowCloseProjectRequest?.Invoke(), () => HasProject);
+            ResetToInitValueCommand = new RelayCommand(ConfirmResetToInitValue, () => SelectedSlave != null);
+            DismissWelcomeCommand = new RelayCommand(() => IsWelcomeVisible = false);
+
+            // 演示数据是构造函数里"无中生有"的，不是用户改的——
+            // 这里必须屏蔽脏标记，否则没有工程文件时（自检模式、或跳过恢复启动）
+            // 一启动就显示"未保存"，保存按钮也会莫名其妙亮着。
+            _suppressDirty = true;
+            try
+            {
+                LoadSampleData();
+            }
+            finally
+            {
+                _suppressDirty = false;
+            }
 
             // 演示数据是直接塞进 Connections 的，扁平列表要自己再摊一次
             RebuildSlaveRows();
 
             // 主题切换后由这里统一刷新依赖状态的画刷
             ThemeService.Changed += OnThemeChanged;
+        }
+
+        /// <summary>
+        /// 启动收尾：恢复上次工程，或者清空并显示欢迎页。
+        ///
+        /// 必须由视图层在构造完 ViewModel 之后调一次（见 App.axaml.cs），
+        /// 不能放进构造函数：自检（--capture-ui）直接用构造出来的 VM 做断言，
+        /// 它要的是"有一份可用的演示点表"，而这里会把它清掉。
+        /// </summary>
+        public void InitializeStartup()
+        {
+            string last = AppSettingsStore.Current.LastProjectPath;
+
+            if (!string.IsNullOrWhiteSpace(last) && System.IO.File.Exists(last))
+            {
+                try
+                {
+                    OpenProject(last);
+                }
+                catch (Exception exception)
+                {
+                    // 上次的工程打不开了：不能因此起不来，退回到欢迎页并说明原因
+                    StatusText = "上次的工程打不开：" + exception.Message;
+                    ResetToEmptyWelcome();
+                }
+            }
+            else
+            {
+                if (!string.IsNullOrWhiteSpace(last))
+                {
+                    // 文件被删/被移走了，顺手清掉这条记录，别让它一直挂着
+                    AppSettingsStore.ForgetCurrentProject();
+                    StatusText = "上次的工程已不存在";
+                }
+
+                ResetToEmptyWelcome();
+            }
+
+            _isWelcomeVisible = AppSettingsStore.Current.ShowWelcomeOnStartup;
+            NotifyProjectState();
+        }
+
+        /// <summary>清空到"没有工程"的状态并显示欢迎页</summary>
+        private void ResetToEmptyWelcome()
+        {
+            _suppressDirty = true;
+            try
+            {
+                foreach (ConnectionViewModel existing in Connections.ToList())
+                {
+                    existing.Close();
+                }
+                Connections.Clear();
+            }
+            finally
+            {
+                _suppressDirty = false;
+            }
+
+            _currentProjectPath = null;
+            _currentProjectName = null;
+            _isProjectDirty = false;
+            _isValueDirty = false;
+            _isWelcomeVisible = true;
+
+            RebuildSlaveRows();
+            RefreshCommandStates();
         }
 
         /// <summary>点位自动变化驱动器（缓变）</summary>
@@ -373,6 +486,14 @@ namespace IEC104.App.ViewModels
             get => _selectedSlave;
             set
             {
+                // 从侧边栏点开一个从站 = "我要开始干活了"，欢迎页自动让位。
+                // 放在 SetField 之前：点的正好是当前那个从站时 SetField 返回 false，
+                // 但用户的意图仍然是"收起欢迎页"，不能因为"选中项没变"就什么都不做。
+                if (value != null && _isWelcomeVisible)
+                {
+                    IsWelcomeVisible = false;
+                }
+
                 if (SetField(ref _selectedSlave, value))
                 {
                     if (value != null && _selectedConnection != null
@@ -849,6 +970,50 @@ namespace IEC104.App.ViewModels
 
         public ICommand ClearRecordsCommand { get; }
 
+        // ── 工程命令（1.10）────────────────────────────────────
+
+        /// <summary>保存到当前工程文件（Ctrl+S 与工具条那颗按钮都走它）</summary>
+        public ICommand SaveProjectCommand { get; }
+
+        /// <summary>关闭工程（回欢迎页）。未保存的处理在视图层，见 ShowCloseProjectRequest</summary>
+        public ICommand CloseProjectCommand { get; }
+
+        /// <summary>按初始值复位当前从站（或选中的那个点）</summary>
+        public ICommand ResetToInitValueCommand { get; }
+
+        /// <summary>收起欢迎页（「继续编辑」）</summary>
+        public ICommand DismissWelcomeCommand { get; }
+
+        // ── 欢迎页（1.10）──────────────────────────────────────
+
+        /// <summary>最近使用的工程，最多 5 条，最新的在最前</summary>
+        public ObservableCollection<RecentProjectEntry> RecentProjects { get; } = new();
+
+        public bool HasRecentProjects => RecentProjects.Count > 0;
+
+        public bool HasNoRecentProjects => RecentProjects.Count == 0;
+
+        /// <summary>欢迎页的大标题：已经恢复过工程就说"当前工程"</summary>
+        public string WelcomeTitle => HasProject ? "当前工程" : "还没有打开工程";
+
+        /// <summary>欢迎页的说明文字，两种状态各一句</summary>
+        public string WelcomeSubtitle => HasProject
+            ? "上次的工程已经自动恢复，可以直接继续编辑。"
+            : "新建一个工程，或者打开已有的工程开始。";
+
+        /// <summary>欢迎页上显示的当前工程路径（没有工程时为空）</summary>
+        public string WelcomeProjectPath => _currentProjectPath ?? string.Empty;
+
+        /// <summary>
+        /// 视图层实现"关闭工程"的完整流程（含未保存提示）。
+        /// 放视图层是因为它要决定"弹不弹框、弹哪个"，VM 只负责发指令。
+        /// </summary>
+
+        public Action ShowCloseProjectRequest { get; set; }
+
+        /// <summary>通用确认框（标题、正文、回调）。视图层注入，避免 VM 依赖 Window</summary>
+        public Action<string, string, Action<bool>> ShowConfirmDialog { get; set; }
+
         /// <summary>批量创建从站（IP 递增/按步长）</summary>
         public ICommand BatchCreateSlaveCommand { get; }
 
@@ -976,30 +1141,534 @@ namespace IEC104.App.ViewModels
         /// <summary>显示缓变配置窗口</summary>
         public Action ShowAutoChangeDialog { get; set; }
 
-        // ── 工作区（工程文件） ───────────────────────────────────
+        // ── 工程（1.10：原"工作区"）────────────────────────────
+
+        /// <summary>当前工程文件路径；null = 还没打开工程（此时欢迎页显示 State A）</summary>
+        public string CurrentProjectPath => _currentProjectPath;
+
+        /// <summary>工程显示名。没有工程时返回应用名，让标题栏不至于空着</summary>
+        public string CurrentProjectName => _currentProjectName;
+
+        public bool HasProject => !string.IsNullOrEmpty(_currentProjectPath);
+
+        /// <summary>结构脏：点表定义改了，值得打断用户</summary>
+        public bool IsProjectDirty => _isProjectDirty;
+
+        /// <summary>值脏：只有运行值变了，退出时静默保存</summary>
+        public bool IsValueDirty => _isValueDirty;
+
+        /// <summary>正在写盘（大工程会有几百毫秒），期间保存按钮禁用</summary>
+        public bool IsSaving => _isSaving;
+
+        /// <summary>欢迎页是否盖在主区域上</summary>
+        public bool IsWelcomeVisible
+        {
+            get => _isWelcomeVisible;
+            set
+            {
+                if (SetField(ref _isWelcomeVisible, value))
+                {
+                    OnPropertyChanged(nameof(IsEditorVisible));
+
+                    // 每次露出欢迎页都重读一遍最近列表：用户可能刚从菜单里存过新文件
+                    if (value)
+                    {
+                        RefreshRecentProjects();
+                    }
+                }
+            }
+        }
+
+        /// <summary>编辑区可见 = 欢迎页没盖着</summary>
+        public bool IsEditorVisible => !_isWelcomeVisible;
 
         /// <summary>
-        /// 保存工作区到指定文件。
-        /// 复刻说明：对应原程序 SaveWorkspaceCommand。
-        /// 由视图层负责选路径（StorageProvider 属于视图职责），这里只做序列化。
+        /// 保存按钮能不能点。
+        /// **值脏也算能点**：用户可能就想把当前值立刻落盘，
+        /// 不该因为"结构没改"就灰着——那会让人觉得"我改了值为什么存不了"。
         /// </summary>
-        public void SaveWorkspace(string path)
+        /// 注意：**不要求已经有工程文件**。用户可以在欢迎页直接建从站、加点，
+        /// 这时候还没有路径（未命名工程），但改动是真实存在的，
+        /// Ctrl+S 应当直接转成"另存为"（见视图层 SaveProjectAsync），
+        /// 按钮不该因为"还没选存放位置"就灰着——那会让用户以为改动不算数。
+        public bool CanSaveProject => !_isSaving && (_isProjectDirty || _isValueDirty);
+
+        /// <summary>保存按钮的悬停提示，带工程名（用户要能确认"存到哪个文件"）</summary>
+        public string SaveProjectTip
         {
-            WorkspaceStore.Save(this, path);
-            StatusText = $"工作区已保存：{System.IO.Path.GetFileName(path)}";
+            get
+            {
+                if (!HasProject)
+                {
+                    return CanSaveProject
+                        ? "保存到文件…（Ctrl+S，会先让你选存放位置）"
+                        : "还没有打开工程";
+                }
+
+                if (_isSaving)
+                {
+                    return "正在保存…";
+                }
+
+                if (!CanSaveProject)
+                {
+                    return "没有需要保存的改动（Ctrl+S）";
+                }
+
+                return $"保存到 {_currentProjectName}{ProjectStore.Extension}（Ctrl+S）";
+            }
         }
 
         /// <summary>
-        /// 从文件载入工作区。
-        /// 复刻说明：对应原程序 OpenWorkspaceCommand。
-        /// 返回载入的点位总数，供界面提示。
+        /// 标题栏文字：有工程时带工程名，结构脏时前面加 ●。
+        ///
+        /// 为什么值脏不加 ●：仿真时值一直在变，标题上永远挂个点会让用户以为存不完。
+        /// 值反正会自己落盘（退出时必写），不需要用户操心。
         /// </summary>
-        public int LoadWorkspace(string path)
+        public string WindowTitle
         {
-            int pointCount = WorkspaceStore.Load(this, path);
+            get
+            {
+                // 没有工程文件、但已经改了东西（未命名工程）：标题照样要挂 ●，
+                // 否则用户看不出"这些改动还没有落脚的地方"
+                string name = string.IsNullOrWhiteSpace(_currentProjectName)
+                    ? ProjectStore.DefaultName
+                    : _currentProjectName;
+
+                if (!HasProject && !_isProjectDirty && !_isValueDirty)
+                {
+                    return AppInfo.ProductName;
+                }
+
+                return _isProjectDirty
+                    ? $"● {name} - {AppInfo.ProductName}"
+                    : $"{name} - {AppInfo.ProductName}";
+            }
+        }
+
+        /// <summary>
+        /// 状态栏要不要显示"保存状态"。
+        /// 有工程文件、或者已经改了东西（含"未命名工程"）都算——后者恰恰更需要提示，
+        /// 因为它连落脚的文件都还没有。
+        /// </summary>
+        public bool ShowSaveState => HasProject || _isProjectDirty || _isValueDirty;
+
+        /// <summary>状态栏右侧的保存状态文字</summary>
+        public string SaveStateText
+        {
+            get
+            {
+                if (!ShowSaveState)
+                {
+                    return string.Empty;
+                }
+
+                if (_isSaving)
+                {
+                    return "正在保存…";
+                }
+
+                if (_isProjectDirty)
+                {
+                    return "未保存";
+                }
+
+                return _lastSavedAt.HasValue
+                    ? $"已保存 {_lastSavedAt.Value:HH:mm}"
+                    : "已保存";
+            }
+        }
+
+        /// <summary>
+        /// 保存到当前工程文件。返回是否真的写了盘。
+        /// 没有工程（或没有改动）时直接返回 false，让调用方决定要不要提示。
+        /// </summary>
+        public bool SaveProject()
+        {
+            if (!HasProject)
+            {
+                return false;
+            }
+
+            return SaveProjectTo(_currentProjectPath, _currentProjectName);
+        }
+
+        /// <summary>
+        /// 保存到指定路径（另存为 / 新建工程都走这里）。
+        /// 写盘是同步的：1.9.7 已经把序列化做成流式，100 万点约 258 ms，
+        /// 这个量级放在 UI 线程上可接受，换来的是"写完就是写完"这个确定的行为。
+        /// </summary>
+        public bool SaveProjectTo(string path, string projectName)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                return false;
+            }
+
+            bool previous = _isSaving;
+            _isSaving = true;
+            OnPropertyChanged(nameof(IsSaving));
+            OnPropertyChanged(nameof(CanSaveProject));
+            OnPropertyChanged(nameof(SaveStateText));
+            OnPropertyChanged(nameof(SaveProjectTip));
+
+            try
+            {
+                ProjectStore.Save(this, path, projectName);
+
+                _currentProjectPath = path;
+                _currentProjectName = string.IsNullOrWhiteSpace(projectName)
+                    ? System.IO.Path.GetFileNameWithoutExtension(path)
+                    : projectName;
+
+                _isProjectDirty = false;
+                _isValueDirty = false;
+                _lastSavedAt = DateTime.Now;
+                _isWelcomeVisible = false;
+
+                AppSettingsStore.RememberProject(_currentProjectPath, _currentProjectName);
+
+                StatusText = $"工程已保存：{_currentProjectName}{System.IO.Path.GetExtension(path)}";
+                return true;
+            }
+            finally
+            {
+                _isSaving = previous;
+                NotifyProjectState();
+            }
+        }
+
+        /// <summary>
+        /// 打开工程文件。异常直接抛出，由视图层负责提示——VM 不该决定"用弹窗还是状态栏"。
+        /// </summary>
+        public int OpenProject(string path)
+        {
+            string documentName;
+            int pointCount;
+
+            _suppressDirty = true;
+            try
+            {
+                pointCount = ProjectStore.Load(this, path, out documentName);
+            }
+            finally
+            {
+                _suppressDirty = false;
+            }
+
+            _currentProjectPath = path;
+            _currentProjectName = string.IsNullOrWhiteSpace(documentName)
+                ? System.IO.Path.GetFileNameWithoutExtension(path)
+                : documentName;
+
+            _isProjectDirty = false;
+            _isValueDirty = false;
+            _lastSavedAt = null;
+            _isWelcomeVisible = false;
+
             RefreshCommandStates();
-            StatusText = $"已打开工作区：{System.IO.Path.GetFileName(path)}（{Connections.Count} 个连接，{pointCount} 个信息对象）";
+            RebuildSlaveRows();
+            AppSettingsStore.RememberProject(_currentProjectPath, _currentProjectName);
+
+            StatusText = $"已打开工程：{_currentProjectName}（{Connections.Count} 个连接，{pointCount} 个信息对象）";
+            NotifyProjectState();
             return pointCount;
+        }
+
+        /// <summary>
+        /// 新建空工程并立刻落盘。
+        ///
+        /// 为什么要"立刻落盘"：否则会出现"新建完但还没保存"的中间状态，
+        /// 用户关窗口时既没有文件可写、又不知道有没有东西丢了。先建文件再编辑，
+        /// 之后每一次 Ctrl+S 都只是覆盖，语义最简单。
+        /// </summary>
+        public void CreateProject(string path, string projectName, bool withSamplePoints)
+        {
+            _suppressDirty = true;
+            try
+            {
+                foreach (ConnectionViewModel existing in Connections.ToList())
+                {
+                    existing.Close();
+                }
+                Connections.Clear();
+
+                if (withSamplePoints)
+                {
+                    LoadSampleData();
+                }
+            }
+            finally
+            {
+                _suppressDirty = false;
+            }
+
+            _currentProjectPath = null;
+            _currentProjectName = projectName;
+            _isProjectDirty = false;
+            _isValueDirty = false;
+            _lastSavedAt = null;
+            _isWelcomeVisible = false;
+
+            SaveProjectTo(path, projectName);
+            AppSettingsStore.RememberProject(_currentProjectPath, _currentProjectName);
+
+            StatusText = $"已新建工程：{_currentProjectName}";
+            NotifyProjectState();
+        }
+
+        /// <summary>
+        /// 关闭工程：清空所有通道/从站/点表，回到欢迎页。
+        /// 调用方负责先处理未保存的内容（见视图层的关闭保护流程）。
+        /// </summary>
+        public void CloseProject()
+        {
+            _suppressDirty = true;
+            try
+            {
+                foreach (ConnectionViewModel existing in Connections.ToList())
+                {
+                    existing.Close();
+                }
+                Connections.Clear();
+            }
+            finally
+            {
+                _suppressDirty = false;
+            }
+
+            _currentProjectPath = null;
+            _currentProjectName = null;
+            _isProjectDirty = false;
+            _isValueDirty = false;
+            _lastSavedAt = null;
+            IsWelcomeVisible = true;
+
+            RefreshCommandStates();
+            RebuildSlaveRows();
+            AppSettingsStore.ForgetCurrentProject();
+
+            StatusText = "已关闭工程";
+            NotifyProjectState();
+        }
+
+        /// <summary>
+        /// 自检专用：把累积的"脏"清掉，回到"没有改动"的基线。
+        ///
+        /// 为什么需要它：自检前几项会**真的**去改点表（验双击编辑、滚轮调值、建从站），
+        /// 这些改动在工程视角下本来就是"未保存"。但后面的断言（主题刷新、标题栏、
+        /// 保存按钮三态）要的是干净基线——不清就会把"该是灰的按钮"量成亮的、
+        /// 把标题量成带 ● 的，那是自检自己造出来的噪声。
+        /// </summary>
+        internal void ClearDirtyState()
+        {
+            _isProjectDirty = false;
+            _isValueDirty = false;
+            NotifyProjectState();
+        }
+
+        /// <summary>标结构脏。集合增删、参数编辑都会调它</summary>
+        internal void MarkStructureDirty()
+        {
+            if (_suppressDirty)
+            {
+                return;
+            }
+
+            if (_isProjectDirty)
+            {
+                return;
+            }
+
+            _isProjectDirty = true;
+
+            // 一改结构就说明用户在编辑了，欢迎页没必要继续挡着点表（第三条退出路径）
+            if (_isWelcomeVisible)
+            {
+                IsWelcomeVisible = false;
+            }
+
+            NotifyProjectState();
+        }
+
+        /// <summary>
+        /// 标值脏。由 SlaveStation 的值变化钩子冒泡上来，每次改值都会调——
+        /// 所以这里必须**极轻**：只置一个 bool，不动集合、不刷新列表。
+        /// 已经脏了就直接返回，避免每秒几十次属性通知。
+        /// </summary>
+        internal void MarkValueDirty()
+        {
+            if (_suppressDirty || _isValueDirty)
+            {
+                return;
+            }
+
+            _isValueDirty = true;
+            OnPropertyChanged(nameof(IsValueDirty));
+            OnPropertyChanged(nameof(ShowSaveState));
+            OnPropertyChanged(nameof(SaveStateText));
+            OnPropertyChanged(nameof(CanSaveProject));
+            OnPropertyChanged(nameof(SaveProjectTip));
+            (SaveProjectCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        /// <summary>工程状态相关的属性一次性全部通知（标题、按钮、状态栏都依赖它们）</summary>
+        private void NotifyProjectState()
+        {
+            OnPropertyChanged(nameof(CurrentProjectPath));
+            OnPropertyChanged(nameof(CurrentProjectName));
+            OnPropertyChanged(nameof(HasProject));
+            OnPropertyChanged(nameof(IsProjectDirty));
+            OnPropertyChanged(nameof(IsValueDirty));
+            OnPropertyChanged(nameof(CanSaveProject));
+            OnPropertyChanged(nameof(SaveProjectTip));
+            OnPropertyChanged(nameof(WindowTitle));
+            OnPropertyChanged(nameof(ShowSaveState));
+            OnPropertyChanged(nameof(SaveStateText));
+            OnPropertyChanged(nameof(WelcomeTitle));
+            OnPropertyChanged(nameof(WelcomeSubtitle));
+            OnPropertyChanged(nameof(WelcomeProjectPath));
+
+            RefreshRecentProjects();
+
+            (SaveProjectCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (CloseProjectCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        // ── 欢迎页 ──────────────────────────────────────────────
+
+        /// <summary>
+        /// 重建欢迎页的「最近使用」列表。
+        ///
+        /// 每次都重新问一遍磁盘（File.Exists）：用户完全可能在上一分钟把文件挪走了，
+        /// 列表却还显示着它——那样点下去只会得到一个打不开的框。
+        /// 5 条记录的 File.Exists 是微秒级的，不值得为它做缓存。
+        /// </summary>
+        private void RefreshRecentProjects()
+        {
+            RecentProjects.Clear();
+
+            List<RecentProjectDto> recent = AppSettingsStore.Current.RecentProjects;
+            if (recent != null)
+            {
+                foreach (RecentProjectDto item in recent)
+                {
+                    if (item == null || string.IsNullOrWhiteSpace(item.Path))
+                    {
+                        continue;
+                    }
+
+                    RecentProjects.Add(new RecentProjectEntry(
+                        item.Path,
+                        item.Name,
+                        item.LastOpenedAt,
+                        System.IO.File.Exists(item.Path),
+                        OpenRecentProject));
+                }
+            }
+
+            OnPropertyChanged(nameof(HasRecentProjects));
+            OnPropertyChanged(nameof(HasNoRecentProjects));
+        }
+
+        /// <summary>从欢迎页的最近列表打开一个工程</summary>
+        private void OpenRecentProject(RecentProjectEntry entry)
+        {
+            if (entry == null || string.IsNullOrWhiteSpace(entry.Path))
+            {
+                return;
+            }
+
+            if (!System.IO.File.Exists(entry.Path))
+            {
+                AppSettingsStore.RemoveRecentProject(entry.Path);
+                RefreshRecentProjects();
+                ShowMessage?.Invoke("工程文件已不存在",
+                    $"{entry.Path}\n\n这个文件已经被移动或删除，已从最近列表里移除。");
+                return;
+            }
+
+            try
+            {
+                int count = OpenProject(entry.Path);
+                AppendLog($"已打开工程 {entry.Path}（{count} 个信息对象）");
+            }
+            catch (Exception exception)
+            {
+                // 打开失败不动当前工程：用户手上的东西不能被一次失败的开操作清掉
+                ShowMessage?.Invoke("打开工程失败", exception.Message);
+            }
+        }
+
+        /// <summary>
+        /// 复位前先问一句，并在确认框里写明范围——
+        /// "复位 1240 个信号"和"复位 1 个信号"是完全不同量级的事，不说清楚就是坑。
+        /// </summary>
+        private void ConfirmResetToInitValue()
+        {
+            if (SelectedSlave == null)
+            {
+                return;
+            }
+
+            bool single = SelectedPoint != null && SelectedSlave.Points.Contains(SelectedPoint);
+            string scope = single
+                ? $"信号 {SelectedPoint.ObjectAddress} {SelectedPoint.Name}"
+                : $"从站 {SelectedSlave.DisplayText} 的全部 {SelectedSlave.Points.Count} 个信号";
+
+            if (ShowConfirmDialog == null)
+            {
+                ResetPointsToInitValue();
+                return;
+            }
+
+            ShowConfirmDialog(
+                "按初始值复位",
+                $"将把{scope}的当前值恢复为初始值。\n\n这个操作会立即上送变位报文（COT=3），主站会收到值变化。",
+                confirmed =>
+                {
+                    if (confirmed)
+                    {
+                        ResetPointsToInitValue();
+                    }
+                });
+        }
+
+        /// <summary>
+        /// 按初始值复位。
+        ///
+        /// 范围规则：选中了某个点 → 只复位它；没选点 → 复位当前从站的全部点。
+        /// 这两个范围对用户来说最好猜："选了的动、没选的全动"。
+        /// </summary>
+        public int ResetPointsToInitValue()
+        {
+            if (SelectedSlave == null)
+            {
+                return 0;
+            }
+
+            int count = 0;
+            if (SelectedPoint != null && SelectedSlave.Points.Contains(SelectedPoint))
+            {
+                SelectedPoint.ResetToInitValue();
+                count = 1;
+            }
+            else
+            {
+                foreach (PointViewModel point in SelectedSlave.Points)
+                {
+                    point.ResetToInitValue();
+                    count++;
+                }
+            }
+
+            if (count > 0)
+            {
+                StatusText = $"已按初始值复位 {count} 个信号";
+                AppendLog($"按初始值复位：{SelectedSlave.DisplayText}，{count} 个信号");
+            }
+
+            return count;
         }
 
         // ── 连接操作 ────────────────────────────────────────────
@@ -1468,6 +2137,12 @@ namespace IEC104.App.ViewModels
                     // 扁平列表是所有通道下所有从站的摊平结果，任何一个通道的从站
                     // 增删都要重摊一次（重摊的成本是 N 行，通道数不会大到需要增量维护）
                     connection.Slaves.CollectionChanged += OnSlavesChanged;
+
+                    // 已经有从站的通道（载入工程时一次性 Add 进来）也要挂上钩子
+                    foreach (SlaveViewModel slave in connection.Slaves)
+                    {
+                        WatchSlave(slave);
+                    }
                 }
             }
 
@@ -1482,13 +2157,61 @@ namespace IEC104.App.ViewModels
                 }
             }
 
+            // 集合变了就是结构变了（载入/新建期间被 _suppressDirty 拦住）
+            MarkStructureDirty();
+
             RebuildSlaveRows();
             OnPropertyChanged(nameof(RunningSummary));
             RefreshCommandStates();
         }
 
         /// <summary>任一通道的从站集合变了：重摊扁平列表（选中按从站对象找回）</summary>
-        private void OnSlavesChanged(object sender, NotifyCollectionChangedEventArgs e) => RebuildSlaveRows();
+        private void OnSlavesChanged(object sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (e.NewItems != null)
+            {
+                foreach (SlaveViewModel slave in e.NewItems)
+                {
+                    WatchSlave(slave);
+                }
+            }
+
+            // Reset（AddRange 批量铺点）时 NewItems 为 null，只能整表重扫
+            if (e.Action == NotifyCollectionChangedAction.Reset && sender is IEnumerable<SlaveViewModel> slaves)
+            {
+                foreach (SlaveViewModel slave in slaves)
+                {
+                    WatchSlave(slave);
+                }
+            }
+
+            MarkStructureDirty();
+            RebuildSlaveRows();
+        }
+
+        /// <summary>
+        /// 给一台从站挂上两个钩子：
+        ///   ① 点表集合变化 → 结构脏（增删信号）
+        ///   ② 任意点值变化 → 值脏（协议层冒泡上来，见 SlaveStation.ValueChangedHook）
+        /// 重复调用是安全的：事件用 -= 再去重绑定，值钩子直接覆盖。
+        /// </summary>
+        private void WatchSlave(SlaveViewModel slave)
+        {
+            if (slave == null)
+            {
+                return;
+            }
+
+            slave.ValueTouched = MarkValueDirty;
+            slave.Points.CollectionChanged -= OnPointsChanged;
+            slave.Points.CollectionChanged += OnPointsChanged;
+        }
+
+        /// <summary>某台从站的点表增删了 → 结构脏</summary>
+        private void OnPointsChanged(object sender, NotifyCollectionChangedEventArgs e)
+        {
+            MarkStructureDirty();
+        }
 
         /// <summary>
         /// 通道自身的 IsOpen 变化 → 工具栏"启停合一"按钮要换文案、换配色。

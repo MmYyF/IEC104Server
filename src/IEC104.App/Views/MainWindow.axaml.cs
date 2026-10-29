@@ -270,6 +270,7 @@ namespace IEC104.App.Views
         protected override void OnOpened(EventArgs e)
         {
             base.OnOpened(e);
+            Program.Trace("window-opened");
 
             MainWindowViewModel viewModel = ViewModel;
             if (viewModel == null)
@@ -304,6 +305,20 @@ namespace IEC104.App.Views
             viewModel.ShowStringCodecDialog = () => _ = new StringCodecWindow().ShowDialog(this);
 
             viewModel.ShowMessage = (title, content) => _ = ShowMessageAsync(title, content);
+
+            // 工程相关（1.10）：确认框与"关闭工程"的完整流程都在视图层，
+            // VM 只发指令——它不该知道"弹框长什么样"。
+            viewModel.ShowConfirmDialog = (title, message, done) =>
+                _ = ShowConfirmAsync(title, message).ContinueWith(
+                    task => done(task.Result), TaskScheduler.FromCurrentSynchronizationContext());
+
+            viewModel.ShowCloseProjectRequest = async () =>
+            {
+                if (await ConfirmDiscardUnsavedAsync("关闭工程", "保存并关闭"))
+                {
+                    viewModel.CloseProject();
+                }
+            };
 
             viewModel.ShowAutoChangeDialog = ShowAutoChangeDialog;
 
@@ -1120,16 +1135,71 @@ namespace IEC104.App.Views
             _ = window.ShowDialog(this);
         }
 
-        // ── 工作区 ──────────────────────────────────────────────
+        // ── 工程 ────────────────────────────────────────────────
 
         /// <summary>
-        /// 打开工作区文件（.iec104ws）。
-        /// 复刻说明：对应原程序 OpenWorkspaceCommand；
-        /// 扩展名用自有的 .iec104ws，同时允许选 .json，方便现场手工编辑后沿用。
+        /// 新建工程：先处理未保存内容 → 弹「新建工程」对话框 → 立即落盘并进编辑区。
         /// </summary>
-        private async void OnOpenWorkspaceClick(object sender, RoutedEventArgs e)
+        private async void OnNewProjectClick(object sender, RoutedEventArgs e) => await NewProjectAsync();
+
+        /// <summary>新建工程（菜单、欢迎页、Ctrl+N 三个入口共用这一处）</summary>
+        internal async Task NewProjectAsync()
+        {
+            MainWindowViewModel viewModel = ViewModel;
+            if (viewModel == null)
+            {
+                return;
+            }
+
+            if (!await ConfirmDiscardUnsavedAsync("新建工程", "保存并继续"))
+            {
+                return;
+            }
+
+            NewProjectWindow window = new();
+            await window.ShowDialog(this);
+
+            if (!window.Confirmed || string.IsNullOrEmpty(window.ProjectPath))
+            {
+                return;
+            }
+
+            try
+            {
+                viewModel.CreateProject(window.ProjectPath, window.ProjectName, window.WithSamplePoints);
+                viewModel.AppendLog($"已新建工程 {window.ProjectPath}");
+            }
+            catch (Exception exception)
+            {
+                await ShowMessageAsync("新建工程失败", exception.Message);
+            }
+        }
+
+        /// <summary>另存为（菜单、Ctrl+Shift+S）</summary>
+        private async void OnSaveProjectAsClick(object sender, RoutedEventArgs e) => await SaveProjectAsAsync();
+
+        // 欢迎页上的两个动作：和菜单走完全同一条实现，不另铺一套
+        private async void OnWelcomeNewProjectClick(object sender, RoutedEventArgs e) => await NewProjectAsync();
+
+        private async void OnWelcomeOpenProjectClick(object sender, RoutedEventArgs e) => await OpenProjectDialogAsync();
+
+        /// <summary>
+        /// 打开工程文件（.iec104proj；同时接受旧的 .iec104ws 和 .json）。
+        /// 复刻说明：对应原程序 OpenWorkspaceCommand；
+        /// 扩展名换自有的 .iec104proj，但老文件必须能直接打开，不能要求先转换。
+        /// </summary>
+        private async void OnOpenProjectClick(object sender, RoutedEventArgs e) => await OpenProjectDialogAsync();
+
+        /// <summary>选文件 + 打开（菜单、欢迎页、Ctrl+O 共用）</summary>
+        internal async Task OpenProjectDialogAsync()
         {
             if (ViewModel == null)
+            {
+                return;
+            }
+
+            // 当前工程有未保存内容时先问一句，别让"打开"变成一次隐形的丢弃
+            if (!await ConfirmDiscardUnsavedAsync("打开其它工程", "保存并继续"))
             {
                 return;
             }
@@ -1137,11 +1207,14 @@ namespace IEC104.App.Views
             IReadOnlyList<IStorageFile> files = await StorageProvider.OpenFilePickerAsync(
                 new FilePickerOpenOptions
                 {
-                    Title = "打开工作区",
+                    Title = "打开工程",
                     AllowMultiple = false,
                     FileTypeFilter = new[]
                     {
-                        new FilePickerFileType("IEC104 工作区") { Patterns = new[] { "*.iec104ws", "*.json" } },
+                        new FilePickerFileType("IEC104 工程")
+                        {
+                            Patterns = new[] { "*" + ProjectStore.Extension, "*" + ProjectStore.LegacyExtension }
+                        },
                         new FilePickerFileType("所有文件") { Patterns = new[] { "*" } }
                     }
                 });
@@ -1158,58 +1231,520 @@ namespace IEC104.App.Views
                 return;
             }
 
-            try
-            {
-                int count = ViewModel.LoadWorkspace(path);
-                ViewModel.AppendLog($"已打开工作区 {path}（{count} 个信息对象）");
-            }
-            catch (Exception exception)
-            {
-                await ShowMessageAsync("打开工作区失败", exception.Message);
-            }
+            await OpenProjectAsync(path);
         }
 
-        /// <summary>保存工作区（含连接参数、从站、完整点表与品质位）</summary>
-        private async void OnSaveWorkspaceClick(object sender, RoutedEventArgs e)
+        /// <summary>打开指定工程文件（欢迎页最近列表、命令行、拖放都走这里）</summary>
+        private async Task OpenProjectAsync(string path)
         {
             if (ViewModel == null)
             {
                 return;
             }
 
+            try
+            {
+                int count = ViewModel.OpenProject(path);
+                ViewModel.AppendLog($"已打开工程 {path}（{count} 个信息对象）");
+            }
+            catch (Exception exception)
+            {
+                // 打开失败时**不动当前工程**：用户手上的东西不能被一次失败的开操作清掉
+                await ShowMessageAsync("打开工程失败", exception.Message);
+            }
+        }
+
+        /// <summary>保存到当前工程文件（Ctrl+S / 工具条按钮）。不弹任何框。</summary>
+        private async void OnSaveProjectClick(object sender, RoutedEventArgs e)
+        {
+            await SaveProjectAsync();
+        }
+
+        /// <summary>
+        /// 保存；没有工程时自动转为"另存为"。
+        /// 返回是否真的存下去了（用户取消对话框也会返回 false）。
+        /// </summary>
+        private async Task<bool> SaveProjectAsync()
+        {
+            if (ViewModel == null)
+            {
+                return false;
+            }
+
+            if (!ViewModel.HasProject)
+            {
+                return await SaveProjectAsAsync();
+            }
+
+            try
+            {
+                return ViewModel.SaveProject();
+            }
+            catch (Exception exception)
+            {
+                await ShowMessageAsync("保存工程失败", exception.Message);
+                return false;
+            }
+        }
+
+        /// <summary>另存为：选路径 → 写盘 → 当前工程指向新文件</summary>
+        private async Task<bool> SaveProjectAsAsync()
+        {
+            if (ViewModel == null)
+            {
+                return false;
+            }
+
             IStorageFile file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
-                Title = "保存工作区",
-                SuggestedFileName = "工作区.iec104ws",
-                DefaultExtension = "iec104ws",
+                Title = "工程另存为",
+                SuggestedFileName = (ViewModel.CurrentProjectName ?? ProjectStore.DefaultName) + ProjectStore.Extension,
+                DefaultExtension = ProjectStore.Extension.TrimStart('.'),
                 FileTypeChoices = new[]
                 {
-                    new FilePickerFileType("IEC104 工作区") { Patterns = new[] { "*.iec104ws" } },
+                    new FilePickerFileType("IEC104 工程") { Patterns = new[] { "*" + ProjectStore.Extension } },
                     new FilePickerFileType("JSON 文件") { Patterns = new[] { "*.json" } }
                 }
             });
 
             if (file == null)
             {
-                return;
+                return false;
             }
 
             string path = file.TryGetLocalPath();
             if (string.IsNullOrEmpty(path))
             {
                 await ShowMessageAsync("无法保存", "请选择本地磁盘路径。");
-                return;
+                return false;
             }
 
             try
             {
-                ViewModel.SaveWorkspace(path);
-                ViewModel.AppendLog($"工作区已保存到 {path}");
+                string name = System.IO.Path.GetFileNameWithoutExtension(path);
+                ViewModel.SaveProjectTo(path, name);
+                ViewModel.AppendLog($"工程已另存为 {path}");
+                return true;
             }
             catch (Exception exception)
             {
-                await ShowMessageAsync("保存工作区失败", exception.Message);
+                await ShowMessageAsync("保存工程失败", exception.Message);
+                return false;
             }
+        }
+
+        // ── 最近工程 ────────────────────────────────────────────
+
+        private void OnRecentProjectsSubmenuOpened(object sender, RoutedEventArgs e) =>
+            RebuildRecentProjectsMenu();
+
+        /// <summary>
+        /// 重建「最近工程」子菜单。
+        ///
+        /// 为什么要重建而不是绑定：列表长度是动态的，还要按"文件是否还在"决定文案，
+        /// 用 XAML 的菜单项模板反而更绕。展开时重建，保证看到的永远是最新列表
+        /// （刚打开过的工程会立刻出现在第一条）。
+        ///
+        /// 文件已不存在的条目**不置灰**：置灰了就点不动，"点一下告诉用户文件没了、
+        /// 顺手把它从列表里清掉"这条路就断了，条目会一直挂着碍眼。
+        /// </summary>
+        internal void RebuildRecentProjectsMenu()
+        {
+            if (RecentProjectsMenuItem == null)
+            {
+                return;
+            }
+
+            MenuItem root = RecentProjectsMenuItem;
+            root.Items.Clear();
+
+            int shown = 0;
+            List<RecentProjectDto> recent = AppSettingsStore.Current.RecentProjects;
+            if (recent != null)
+            {
+                foreach (RecentProjectDto item in recent)
+                {
+                    if (item == null || string.IsNullOrWhiteSpace(item.Path))
+                    {
+                        continue;
+                    }
+
+                    bool exists = System.IO.File.Exists(item.Path);
+                    string name = string.IsNullOrWhiteSpace(item.Name)
+                        ? System.IO.Path.GetFileNameWithoutExtension(item.Path)
+                        : item.Name;
+
+                    MenuItem entry = new()
+                    {
+                        Header = exists
+                            ? $"{name}    {FormatRecentTime(item.LastOpenedAt)}"
+                            : $"{name}（文件已不存在）",
+                        Tag = item.Path
+                    };
+                    ToolTip.SetTip(entry, item.Path);
+                    entry.Click += OnRecentProjectItemClick;
+                    root.Items.Add(entry);
+                    shown++;
+                }
+            }
+
+            if (shown == 0)
+            {
+                root.Items.Add(new MenuItem { Header = "（最近没有打开过的工程）", IsEnabled = false });
+                return;
+            }
+
+            root.Items.Add(new Separator());
+            MenuItem clear = new() { Header = "清空最近列表" };
+            clear.Click += OnClearRecentProjectsClick;
+            root.Items.Add(clear);
+        }
+
+        /// <summary>最近列表里的时间：今天给时刻、昨天给"昨天"、更早给日期</summary>
+        private static string FormatRecentTime(DateTime time)
+        {
+            if (time == default)
+            {
+                return string.Empty;
+            }
+
+            DateTime today = DateTime.Today;
+            if (time.Date == today)
+            {
+                return time.ToString("HH:mm");
+            }
+
+            if (time.Date == today.AddDays(-1))
+            {
+                return "昨天";
+            }
+
+            return time.Year == today.Year
+                ? time.ToString("MM-dd")
+                : time.ToString("yyyy-MM-dd");
+        }
+
+        private async void OnRecentProjectItemClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is not MenuItem { Tag: string path } || ViewModel == null)
+            {
+                return;
+            }
+
+            if (!System.IO.File.Exists(path))
+            {
+                AppSettingsStore.RemoveRecentProject(path);
+                await ShowMessageAsync("工程文件已不存在",
+                    $"{path}\n\n这个文件已经被移动或删除，已从最近列表里移除。");
+                return;
+            }
+
+            if (!await ConfirmDiscardUnsavedAsync("打开其它工程", "保存并继续"))
+            {
+                return;
+            }
+
+            await OpenProjectAsync(path);
+        }
+
+        private void OnClearRecentProjectsClick(object sender, RoutedEventArgs e)
+        {
+            AppSettingsStore.ClearRecentProjects();
+            RebuildRecentProjectsMenu();
+            ViewModel?.AppendLog("已清空最近工程列表");
+        }
+
+        // ── 快捷键 ──────────────────────────────────────────────
+
+        /// <summary>
+        /// Ctrl+S / Ctrl+Shift+S / Ctrl+N / Ctrl+O。
+        ///
+        /// 为什么不用 XAML 的 KeyBindings：那套只能绑 ICommand，而这四个动作要么是
+        /// 异步方法（选文件、弹框），要么要 await 保存结果（保存失败就不能接着关窗），
+        /// 塞不进命令的同步签名里。在这里统一转发一次，四个键和菜单是同一套实现。
+        /// </summary>
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+
+            if (e.Handled || (e.KeyModifiers & KeyModifiers.Alt) != 0)
+            {
+                return;
+            }
+
+            if ((e.KeyModifiers & KeyModifiers.Control) == 0)
+            {
+                return;
+            }
+
+            bool shift = (e.KeyModifiers & KeyModifiers.Shift) != 0;
+            switch (e.Key)
+            {
+                case Key.S:
+                    e.Handled = true;
+                    _ = shift ? SaveProjectAsAsync() : SaveProjectAsync();
+                    break;
+
+                case Key.N:
+                    e.Handled = true;
+                    _ = NewProjectAsync();
+                    break;
+
+                case Key.O:
+                    e.Handled = true;
+                    _ = OpenProjectDialogAsync();
+                    break;
+            }
+        }
+
+        // ── 关闭保护 ────────────────────────────────────────────
+
+        /// <summary>已经走完保存流程、确认可以关了（避免二次拦截又弹一次框）</summary>
+        private bool _closeConfirmed;
+
+        /// <summary>保存询问流程正在走（防止连点两次关闭按钮叠出两个框）</summary>
+        private bool _closeInProgress;
+
+        /// <summary>
+        /// 关窗收尾：
+        ///   · 没有工程、也没有改动 → 直接关；
+        ///   · 只有值变了 → **静默保存**再关（不打扰）；
+        ///   · 有结构改动 → 三选一（保存并退出 / 不保存 / 取消）。
+        ///
+        /// 先 `e.Cancel = true` 拦住这次关闭，把异步流程走完再自己调 Close()——
+        /// Closing 是同步事件，里面没法 await；硬 await 会让窗口在"等用户点按钮"的
+        /// 过程中处于半关闭状态，用户再点一次 × 就会叠出两个对话框。
+        /// </summary>
+        protected override void OnClosing(WindowClosingEventArgs e)
+        {
+            base.OnClosing(e);
+            Program.Trace($"window-closing dirty={ViewModel?.IsProjectDirty} valueDirty={ViewModel?.IsValueDirty} confirmed={_closeConfirmed} cancel={e.Cancel}");
+
+            if (_closeConfirmed || e.Cancel)
+            {
+                return;
+            }
+
+            MainWindowViewModel viewModel = ViewModel;
+            if (viewModel == null)
+            {
+                return;
+            }
+
+            // 自检模式（--capture-ui）跑完是自己关窗口退出的，没有人会去点
+            // "保存并退出"那三个按钮——这里必须放行，否则自检会永远卡在模态框上
+            // （第一版就是这么挂住的：跑了 5 分钟没结束）。
+            if (UiCapture.Enabled)
+            {
+                return;
+            }
+
+            // 判据只看"有没有东西没落盘"，不看"有没有工程文件"：
+            // 用户在欢迎页直接建了一堆从站（未命名工程）就直接关窗口，
+            // 那些改动一样会丢，一样要问。
+            if (!viewModel.IsProjectDirty && !viewModel.IsValueDirty)
+            {
+                return;
+            }
+
+            e.Cancel = true;
+            if (!_closeInProgress)
+            {
+                _ = CloseAfterSaveAsync();
+            }
+        }
+
+        private async Task CloseAfterSaveAsync()
+        {
+            _closeInProgress = true;
+            try
+            {
+                MainWindowViewModel viewModel = ViewModel;
+                if (viewModel == null)
+                {
+                    return;
+                }
+
+                // 没有工程文件时也必须问：静默保存做不到（保存得先选一个位置），
+                // 一声不响地关掉等于把用户刚建的从站/点表扔掉。
+                if (viewModel.IsProjectDirty || !viewModel.HasProject)
+                {
+                    SavePromptResult result = await PromptSaveChangesAsync("退出", "保存并退出");
+                    if (result == SavePromptResult.Cancel)
+                    {
+                        return;
+                    }
+
+                    // 保存失败（磁盘满 / 只读 / 文件被占）时 SaveProjectAsync 已经弹过原因，
+                    // 这里必须留住窗口：退出但没存上，比不退出糟得多
+                    if (result == SavePromptResult.Save && !await SaveProjectAsync())
+                    {
+                        return;
+                    }
+                }
+                else
+                {
+                    // 只有值脏：静默保存。用户要的就是"退出时把界面上的值存下来"，
+                    // 这里弹框问一次"要存值吗"只会训练他盲点。
+                    try
+                    {
+                        viewModel.SaveProject();
+                    }
+                    catch (Exception exception)
+                    {
+                        bool stillQuit = await ShowConfirmAsync("保存失败",
+                            $"退出前保存工程失败：{exception.Message}\n\n仍然要退出吗？（未保存的改动会丢失）");
+                        if (!stillQuit)
+                        {
+                            return;
+                        }
+                    }
+                }
+
+                _closeConfirmed = true;
+                Close();
+            }
+            finally
+            {
+                _closeInProgress = false;
+            }
+        }
+
+        /// <summary>
+        /// 有未保存内容时问一句，返回 false 表示应当**放弃当前动作**（用户点了取消）。
+        ///
+        /// 判据只看 `IsProjectDirty`（结构脏）：值脏不打断用户，跟着保存一起走——
+        /// SaveProject 本来就把值一起写下去，没必要为"值也变了"多问一句。
+        /// 只有值变了的工程换文件时，那些值会丢——但值本来就是"上次停下时的样子"，
+        /// 下次打开按文件里的值来，不会丢设计值（InitValue）。
+        /// </summary>
+        private async Task<bool> ConfirmDiscardUnsavedAsync(string action, string saveLabel = "保存并继续")
+        {
+            if (ViewModel == null)
+            {
+                return true;
+            }
+
+            // 没有工程文件也算脏：改动还没落脚的地方，换文件前必须先给它找个位置。
+            // 例外：既没工程文件、又只有值变化——那种状态下值会自己落盘（退出时），
+            // 换文件时丢掉无所谓，不必为它拦一道。
+            bool needsPrompt = ViewModel.IsProjectDirty
+                || (!ViewModel.HasProject && ViewModel.IsValueDirty);
+
+            if (!needsPrompt)
+            {
+                return true;
+            }
+
+            SavePromptResult result = await PromptSaveChangesAsync(action, saveLabel);
+            return result switch
+            {
+                SavePromptResult.Cancel => false,
+                SavePromptResult.Discard => true,
+                _ => await SaveProjectAsync()
+            };
+        }
+
+        /// <summary>保存提示框的三种结果</summary>
+        private enum SavePromptResult
+        {
+            Save,
+            Discard,
+            Cancel
+        }
+
+        /// <summary>
+        /// 「工程有未保存的修改」三选一提示框：[取消] [不保存] [保存并…]。
+        ///
+        /// 为什么不用 ShowConfirmAsync：那个只有两颗按钮，"不保存"和"取消"挤不进同一个
+        /// 二值结果里。关闭窗口这种事一旦把"不保存"错当成"取消"，用户就再也关不掉；
+        /// 反过来把"取消"当成"不保存"，一次误点就丢掉改动。三个出口必须都是显式的，
+        /// 所以这里单独搭一个三按钮的框。
+        ///
+        /// 直接关掉窗口（右上角 ×）等同于「取消」——默认值就是 Cancel，不用额外挂事件。
+        /// </summary>
+        private async Task<SavePromptResult> PromptSaveChangesAsync(string action, string saveLabel)
+        {
+            SavePromptResult result = SavePromptResult.Cancel;
+
+            Window dialog = new Window
+            {
+                Title = "工程有未保存的修改",
+                Icon = AppIcons.Main,
+                Width = 520,
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                CanResize = false,
+                Background = ThemePalette.Get("SurfaceBrush")
+            };
+
+            Button cancelButton = new Button
+            {
+                Content = "取消",
+                Width = 88,
+                Margin = new Avalonia.Thickness(0, 12, 8, 0)
+            };
+            cancelButton.Click += (_, _) =>
+            {
+                result = SavePromptResult.Cancel;
+                dialog.Close();
+            };
+
+            Button discardButton = new Button
+            {
+                Content = "不保存",
+                Width = 88,
+                Margin = new Avalonia.Thickness(0, 12, 8, 0)
+            };
+            discardButton.Click += (_, _) =>
+            {
+                result = SavePromptResult.Discard;
+                dialog.Close();
+            };
+
+            Button saveButton = new Button
+            {
+                Content = saveLabel,
+                MinWidth = 108,
+                Margin = new Avalonia.Thickness(0, 12, 0, 0)
+            };
+            saveButton.Classes.Add("primary");
+            saveButton.Click += (_, _) =>
+            {
+                result = SavePromptResult.Save;
+                dialog.Close();
+            };
+
+            string name = ViewModel?.CurrentProjectName ?? ProjectStore.DefaultName;
+
+            dialog.Content = new StackPanel
+            {
+                Margin = new Avalonia.Thickness(18),
+                Spacing = 8,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = "工程有未保存的修改",
+                        FontWeight = Avalonia.Media.FontWeight.SemiBold,
+                        FontSize = 13
+                    },
+                    new TextBlock
+                    {
+                        Text = $"「{name}」的点表有改动还没保存。\n\n要先保存再{action}吗？",
+                        TextWrapping = Avalonia.Media.TextWrapping.Wrap
+                    },
+                    new StackPanel
+                    {
+                        Orientation = Avalonia.Layout.Orientation.Horizontal,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                        Children = { cancelButton, discardButton, saveButton }
+                    }
+                }
+            };
+
+            await dialog.ShowDialog(this);
+            return result;
         }
 
         // ── 自绘标题栏 ──────────────────────────────────────────

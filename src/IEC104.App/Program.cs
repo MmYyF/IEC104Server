@@ -22,6 +22,7 @@ namespace IEC104.App
         public static void Main(string[] args)
         {
             InstallCrashLogging();
+            Trace("main-enter args=" + string.Join(' ', args));
 
             // 启动链路自己再兜一层。AppDomain.UnhandledException 收得到，但它拿到的
             // 异常未必带着这句"崩在哪个阶段"的上下文；而且 certaines 平台上
@@ -61,6 +62,31 @@ namespace IEC104.App
                 WriteLog("Task", e.Exception);
                 e.SetObserved();
             };
+        }
+
+        /// <summary>
+        /// 启动/退出轨迹：只在设了环境变量 IEC104_STARTUP_LOG 时写文件。
+        ///
+        /// 为什么需要它：WinExe 没有控制台，"双击后窗口一闪就没了"这种事只能靠
+        /// 文件说话——crash.log 只记异常，而"正常退出"是不留痕迹的。
+        /// 这里记的是阶段名与窗口的打开/关闭，用来回答"是没起来，还是起来后被关掉了"。
+        /// </summary>
+        internal static void Trace(string message)
+        {
+            string path = Environment.GetEnvironmentVariable("IEC104_STARTUP_LOG");
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
+
+            try
+            {
+                File.AppendAllText(path, $"{DateTime.Now:HH:mm:ss.fff} {message}{Environment.NewLine}");
+            }
+            catch
+            {
+                // 轨迹写不进去不能影响启动
+            }
         }
 
         internal static void WriteLog(string source, Exception ex)

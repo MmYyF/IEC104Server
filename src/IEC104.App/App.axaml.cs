@@ -48,6 +48,29 @@ namespace IEC104.App
                     Program.StartupStage = "build-viewmodel";
                     MainWindowViewModel viewModel = new MainWindowViewModel();
 
+                    // 三个命令行模式（压测 / 界面自检 / 内存探针）要的是构造函数里那份
+                    // **演示点表**，不能被"恢复上次工程"清掉——它们拿它当断言素材。
+                    // 所以参数先读出来，再决定要不要走启动恢复。
+                    string benchArgs = ReadArgument("--bench-scale");
+                    string captureDir = ReadArgument("--capture-ui");
+                    string memProbePath = ReadArgument("--mem-probe");
+
+                    // 启动恢复：读上次的工程 → 打开；没有就退回欢迎页。
+                    // 放在窗口构建之前：标题栏、工具条、状态栏第一次渲染就要拿到
+                    // 工程名和"有没有保存必要"，事后再补会闪一下默认态。
+                    //
+                    // 逃生开关：万一上次那个工程文件坏了/所在盘掉线，导致一启动就打不开，
+                    // 现场需要"先把工具打开"的路。设 IEC104_NO_RESTORE=1 跳过恢复直接进欢迎页。
+                    bool skipRestore = !string.IsNullOrWhiteSpace(
+                        Environment.GetEnvironmentVariable("IEC104_NO_RESTORE"));
+
+                    Program.StartupStage = "startup-restore";
+                    if (benchArgs == null && captureDir == null && memProbePath == null && !skipRestore)
+                    {
+                        viewModel.InitializeStartup();
+                    }
+
+                    Program.Trace("build-window");
                     Program.StartupStage = "build-window";
                     MainWindow mainWindow = new MainWindow { DataContext = viewModel };
                     desktop.MainWindow = mainWindow;
@@ -57,7 +80,6 @@ namespace IEC104.App
 
                     // 规模压测：--bench-scale <从站数> <每台点数> [输出目录]
                     // 用来回答"100 台装置 / 20 万点会不会卡"这类问题（见 Views/ScaleBench.cs）
-                    string benchArgs = ReadArgument("--bench-scale");
                     if (benchArgs != null)
                     {
                         string[] parts = benchArgs.Split(',', ';', ' ');
@@ -85,7 +107,6 @@ namespace IEC104.App
                     }
 
                     // 自检模式：--capture-ui <目录>，把每个窗口渲染成 PNG 后退出
-                    string captureDir = ReadArgument("--capture-ui");
                     if (captureDir != null)
                     {
                         UiCapture.Directory = captureDir;
@@ -114,7 +135,6 @@ namespace IEC104.App
 
                     // 内存探针：--mem-probe=<日志路径>，量完空载基线就退出。
                     // 用来回答"还没建站点就占 200MB，这钱花在哪了"（见 Views/MemoryProbe.cs）
-                    string memProbePath = ReadArgument("--mem-probe");
                     if (memProbePath != null)
                     {
                         Dispatcher.UIThread.Post(async () =>
@@ -135,6 +155,7 @@ namespace IEC104.App
                     }
 
                     Program.StartupStage = "window-ready";
+                    Program.Trace("window-ready");
                 }
                 catch (Exception ex)
                 {

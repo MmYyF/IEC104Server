@@ -1,0 +1,62 @@
+﻿<views:DialogWindow xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:IEC104.App.Views"
+        x:Class="IEC104.App.Views.NewProjectWindow"
+        Title="新建工程"
+        Icon="/Assets/app.ico"
+        Width="620" Height="430"
+        WindowStartupLocation="CenterOwner">
+
+  <!-- 按钮放固定的 Auto 行、内容区可滚：小屏（1366×768 / 1080p@150%）也点得到"确定"。
+       见 界面设计规范.md 第二节。 -->
+  <Grid RowDefinitions="*,Auto" Margin="16,14,16,14">
+
+    <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Spacing="12">
+
+        <StackPanel Spacing="6">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <TextBlock Text="工程名" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}" />
+            <views:HintIcon Tip="工程名只是显示用（标题栏、最近列表），可以和文件名不同。非法字符会自动替换成下划线。点确定后会立刻在下面的位置生成一个空工程文件，之后每次 Ctrl+S 都只是覆盖它。" />
+          </StackPanel>
+          <TextBox x:Name="NameBox" Watermark="例如：城东变电站仿真" TextChanged="OnInputChanged" />
+        </StackPanel>
+
+        <StackPanel Spacing="6">
+          <TextBlock Text="存放位置" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}" />
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBox Grid.Column="0" x:Name="FolderBox" TextChanged="OnInputChanged" />
+            <Button Grid.Column="1" Content="浏览…" Width="80" Margin="8,0,0,0" Click="OnBrowseClick" />
+          </Grid>
+        </StackPanel>
+
+        <StackPanel Spacing="6">
+          <TextBlock Text="完整路径" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}" />
+          <Border Background="{DynamicResource SurfaceAltBrush}" CornerRadius="6" Padding="10,8">
+            <TextBlock x:Name="PathPreview" TextWrapping="Wrap"
+                       Foreground="{DynamicResource TextSecondaryBrush}" />
+          </Border>
+          <TextBlock x:Name="PathHint" FontSize="11.5" TextWrapping="Wrap"
+                     Foreground="{DynamicResource DangerBrush}" IsVisible="False" />
+        </StackPanel>
+
+        <StackPanel Spacing="4">
+          <CheckBox x:Name="SampleBox" Content="包含示例信号（24 个：双点遥信 / 单点遥信 / 遥测 / 累计量 / 档位）"
+                    IsChecked="False" />
+          <TextBlock Text="不勾就是完全空的工程，从站和信号都由你自己建。"
+                     FontSize="11.5" Foreground="{DynamicResource TextSecondaryBrush}"
+                     Margin="24,0,0,0" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <TextBlock x:Name="ErrorText" Foreground="{DynamicResource DangerBrush}"
+                   TextWrapping="Wrap" IsVisible="False" />
+      </StackPanel>
+    </ScrollViewer>
+
+    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8"
+                HorizontalAlignment="Right" Margin="0,14,0,0">
+      <Button Content="取消" Width="88" Click="OnCancelClick" />
+      <Button Content="创建工程" Width="104" Classes="accent" Click="OnOkClick" />
+    </StackPanel>
+  </Grid>
+</views:DialogWindow>
