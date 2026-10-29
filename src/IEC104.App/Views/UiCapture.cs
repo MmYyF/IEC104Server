@@ -5589,6 +5589,13 @@ namespace IEC104.App.Views
                     && dirtyWeight == FontWeight.SemiBold
                     && dirtyCaption == "未保存";
 
+                // 左边那行"工程已保存：xxx"是过去时，右边这颗说的是现在。
+                // 存完再改一个点，两句话并排就成了"工程已保存 / 未保存"——自己打自己。
+                bool noStaleSave = viewModel.StatusText != null
+                    && !viewModel.StatusText.StartsWith("工程已保存", StringComparison.Ordinal);
+                Log(dir, $"statusbar-no-stale-save: 保存后又改结构，左邻文字=\"{viewModel.StatusText}\""
+                    + "（不能还挂着「工程已保存：…」） => " + (noStaleSave ? "PASS" : "FAIL"));
+
                 // 留一张"未保存"态的实图：这三态是给人看的，光靠断言看不出胶囊底抢不抢眼。
                 // Save 走离屏渲染，不会改动窗口状态，存完照常往下走。
                 Save(mainWindow, Path.Combine(dir, "43-状态栏-未保存.png"));

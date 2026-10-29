@@ -47,6 +47,13 @@ namespace IEC104.App.ViewModels
         private SlaveViewModel _selectedSlave;
         private PointViewModel _selectedPoint;
         private string _statusText = "就绪";
+
+        /// <summary>
+        /// 上一次写进 StatusText 的那句"工程已保存：xxx"。
+        /// 存它是为了能认出"这行还是保存留下的、但现在已经有新改动了"——
+        /// 不然左邻"工程已保存"和右邻"未保存"并排，读起来像自相矛盾。
+        /// </summary>
+        private string _saveStatusMessage;   // 未启用 nullable 上下文，这里不用 string?
         private bool _alwaysOnTop;
 
         /// <summary>底部监视面板默认展开（高度 240，由主窗口的行定义控制）</summary>
@@ -1362,7 +1369,8 @@ namespace IEC104.App.ViewModels
 
                 AppSettingsStore.RememberProject(_currentProjectPath, _currentProjectName);
 
-                StatusText = $"工程已保存：{_currentProjectName}{System.IO.Path.GetExtension(path)}";
+                _saveStatusMessage = $"工程已保存：{_currentProjectName}{System.IO.Path.GetExtension(path)}";
+                StatusText = _saveStatusMessage;
                 return true;
             }
             finally
@@ -1501,6 +1509,23 @@ namespace IEC104.App.ViewModels
             NotifyProjectState();
         }
 
+        /// <summary>
+        /// 把过期的"工程已保存：xxx"从状态栏左侧撤掉，退回"就绪"。
+        ///
+        /// 为什么要有：左边这行是过去时的操作日志，右边那颗指示器说的是**现在**的状态。
+        /// 存完再改一个点，两句话并排就成了"工程已保存 / 未保存"——自己打自己。
+        /// 只认自己刚写进去的那一句：别的操作日志（"已按初始值复位 16 个信号"）不动。
+        /// </summary>
+        private void ClearStaleSaveMessage()
+        {
+            if (_saveStatusMessage != null && StatusText == _saveStatusMessage)
+            {
+                StatusText = "就绪";
+            }
+
+            _saveStatusMessage = null;
+        }
+
         /// <summary>标结构脏。集合增删、参数编辑都会调它</summary>
         internal void MarkStructureDirty()
         {
@@ -1522,6 +1547,8 @@ namespace IEC104.App.ViewModels
                 IsWelcomeVisible = false;
             }
 
+            ClearStaleSaveMessage();
+
             NotifyProjectState();
         }
 
@@ -1538,6 +1565,12 @@ namespace IEC104.App.ViewModels
             }
 
             _isValueDirty = true;
+
+            // 值一改，"工程已保存：xxx" 就过期了。但这一路是每点变化都会来的热路径，
+            // 而清提示只可能发生在"上一次保存之后第一次改值"（脏了就直接 return 了），
+            // 所以这里多做一次字符串比较不会有性能问题。
+            ClearStaleSaveMessage();
+
             OnPropertyChanged(nameof(IsValueDirty));
             OnPropertyChanged(nameof(ShowSaveState));
             OnPropertyChanged(nameof(SaveStateText));
