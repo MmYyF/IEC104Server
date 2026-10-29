@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    IEC104.Core —— IEC 60870-5-101/104 协议内核（复刻自 lib60870.dll）
+
+    设计说明：
+    * 目标框架 net8.0，与原程序集（Microsoft.NETCore.App 8.0.16）保持一致。
+    * 不引用任何第三方 NuGet，全部为 BCL 内置类型，保证在隔离内网环境可直接编译。
+    * 原实现依赖的 Parse.dll（激活/授权程序集）在此处【完全不存在】，
+      本工程没有任何联网、授权、试用期相关的代码或引用。
+    * Nullable 与隐式 using 关闭，让每一处 using 与空值处理显式可见，便于作为教学/分析材料阅读。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>IEC104.Core</RootNamespace>
+    <AssemblyName>IEC104.Core</AssemblyName>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>CS1591</NoWarn>
+  </PropertyGroup>
+
+</Project>

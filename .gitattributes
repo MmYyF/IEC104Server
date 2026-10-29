@@ -1,0 +1,38 @@
+# ══════════════════════════════════════════════════════════════
+# 换行规则
+#
+# 现状：磁盘上的源码原本就是 LF 换行，所以仓库和工作区都统一按 LF 存，
+# 不做任何转换——避免"签出一次，全仓库都显示改过"的假 diff。
+#
+# 例外只有三类，它们必须 CRLF 才不会出问题：
+#   · .bat / .cmd  —— cmd.exe 解析批处理时对 LF 结尾支持不完整，
+#                     `goto :label`、多行 if 块会出错
+#   · .sln         —— VS 的解析器只认 CRLF
+# 这三类是"生成/工具链要求"，不是风格偏好。
+# ══════════════════════════════════════════════════════════════
+
+* text=auto eol=lf
+
+# 必须 CRLF 的
+*.bat      text eol=crlf
+*.cmd      text eol=crlf
+*.sln      text eol=crlf
+
+# 明确按文本处理的类型（走上面的 LF 规则，只是让 git 不做二进制猜测）
+*.cs       text diff=csharp
+*.axaml    text
+*.xaml     text
+*.csproj   text
+*.props    text
+*.targets  text
+*.md       text
+*.json     text
+
+# 二进制：不要猜、不转换
+*.png      binary
+*.jpg      binary
+*.ico      binary
+*.exe      binary
+*.dll      binary
+*.pdb      binary
+*.ttf      binary

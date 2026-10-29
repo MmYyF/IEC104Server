@@ -1,0 +1,85 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:IEC104.App.Views"
+             x:Class="IEC104.App.Views.LinkParametersPanel">
+
+  <!--
+    链路参数 + 报文长度 —— 可复用面板。
+
+    为什么做成一个用户控件：这两组参数现在要出现在四个地方
+    （通道配置、联合建从站、双击从站标签、批量建从站）。
+    四处各抄一份 XAML，迟早出现"这个窗口少一个 t3、那个窗口少一个宽度"的漂移，
+    而这几项恰好是错了就连不上主站的参数。抄一次，绑 LinkParametersModel。
+
+    宽度自适应：标签列 Auto、输入列 *，390px 也能排两列，700px 会自动拉伸。
+
+    说明文字一律收进标题旁的 "?" —— 这两段原来各占两三行，
+    在 720 高的屏幕上光提示就吃掉四分之一，真正要填的框反而挤在一起。
+  -->
+  <StackPanel Spacing="8">
+
+    <StackPanel Orientation="Horizontal" Spacing="6">
+      <TextBlock Text="链路参数（k / w / t1 / t2 / t3）"
+                 FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}"
+                 VerticalAlignment="Center" />
+      <views:HintIcon Tip="k 是未确认 I 帧的最大数量（发送窗口），w 是收到多少帧必须确认（接收窗口）；t1 为发送后等确认的超时，t2 为收到数据后延迟确认的时间，t3 为空闲时发送测试帧保活的间隔。约束：w 必须小于 k，t2 必须小于 t1，否则链路会出现“发着发着就停了”的现象。" />
+    </StackPanel>
+
+    <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto">
+      <TextBlock Grid.Row="0" Grid.Column="0" Text="k 发送窗口" VerticalAlignment="Center" Margin="0,0,8,0" />
+      <NumericUpDown Grid.Row="0" Grid.Column="1" Value="{Binding K, Mode=TwoWay}"
+                     Minimum="1" Maximum="32767" Increment="1" FormatString="0" Margin="0,3" />
+
+      <TextBlock Grid.Row="0" Grid.Column="2" Text="w 接收窗口" VerticalAlignment="Center" Margin="12,0,8,0" />
+      <NumericUpDown Grid.Row="0" Grid.Column="3" Value="{Binding W, Mode=TwoWay}"
+                     Minimum="1" Maximum="32767" Increment="1" FormatString="0" Margin="0,3" />
+
+      <TextBlock Grid.Row="1" Grid.Column="0" Text="t1 确认超时(s)" VerticalAlignment="Center" Margin="0,0,8,0" />
+      <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding T1Seconds, Mode=TwoWay}"
+                     Minimum="1" Maximum="255" Increment="1" FormatString="0" Margin="0,3" />
+
+      <TextBlock Grid.Row="1" Grid.Column="2" Text="t2 确认等待(s)" VerticalAlignment="Center" Margin="12,0,8,0" />
+      <NumericUpDown Grid.Row="1" Grid.Column="3" Value="{Binding T2Seconds, Mode=TwoWay}"
+                     Minimum="1" Maximum="255" Increment="1" FormatString="0" Margin="0,3" />
+
+      <TextBlock Grid.Row="2" Grid.Column="0" Text="t3 空闲保活(s)" VerticalAlignment="Center" Margin="0,0,8,0" />
+      <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding T3Seconds, Mode=TwoWay}"
+                     Minimum="1" Maximum="255" Increment="1" FormatString="0" Margin="0,3" />
+    </Grid>
+
+    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0">
+      <TextBlock Text="报文长度" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}"
+                 VerticalAlignment="Center" />
+      <TextBlock Text="{Binding ApplicationWidthsText}" Classes="hint" VerticalAlignment="Center" />
+      <views:HintIcon Tip="IEC 60870-5-104 默认 2 / 2 / 3 字节，101 默认 1 / 1 / 2。公共地址 1 字节只到 255，信息体地址 1 / 2 字节只到 255 / 65535 —— 改小前请确认从站公共地址与点号都装得下，否则报文格式仍然合法，但主站会按错的地址去找、静默丢弃。改动需停止通道后重启才生效。" />
+    </StackPanel>
+
+    <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto">
+      <TextBlock Grid.Row="0" Grid.Column="0" Text="传送原因长度" VerticalAlignment="Center" Margin="0,0,8,0" />
+      <ComboBox Grid.Row="0" Grid.Column="1" x:Name="CotLengthBox" Margin="0,3"
+                HorizontalAlignment="Stretch"
+                SelectedIndex="{Binding CauseOfTransmissionLengthIndex, Mode=TwoWay}">
+        <ComboBoxItem Content="1 字节" />
+        <ComboBoxItem Content="2 字节" />
+      </ComboBox>
+
+      <TextBlock Grid.Row="0" Grid.Column="2" Text="公共地址长度" VerticalAlignment="Center" Margin="12,0,8,0" />
+      <ComboBox Grid.Row="0" Grid.Column="3" x:Name="CaLengthBox" Margin="0,3"
+                HorizontalAlignment="Stretch"
+                SelectedIndex="{Binding CommonAddressLengthIndex, Mode=TwoWay}">
+        <ComboBoxItem Content="1 字节" />
+        <ComboBoxItem Content="2 字节" />
+      </ComboBox>
+
+      <TextBlock Grid.Row="1" Grid.Column="0" Text="信息体地址长度" VerticalAlignment="Center" Margin="0,0,8,0" />
+      <ComboBox Grid.Row="1" Grid.Column="1" x:Name="IoaLengthBox" Margin="0,3"
+                HorizontalAlignment="Stretch"
+                SelectedIndex="{Binding InformationObjectAddressLengthIndex, Mode=TwoWay}">
+        <ComboBoxItem Content="1 字节" />
+        <ComboBoxItem Content="2 字节" />
+        <ComboBoxItem Content="3 字节" />
+      </ComboBox>
+    </Grid>
+
+  </StackPanel>
+</UserControl>

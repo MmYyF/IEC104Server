@@ -1,0 +1,1763 @@
+﻿<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:sys="using:System"
+        xmlns:ctl="using:IEC104.App.Controls">
+
+  <!--
+    应用主题资源。
+    配色依据：原版 logo 为橙红渐变（近似 #FF6A2B → #F03B12），
+    界面为 SimpleTheme 浅色，故此处以白底 + 橙红强调色还原整体观感。
+  -->
+  <Styles.Resources>
+    <!-- ══ 工具条图标（24×24 几何，第十七轮按标题栏那排图标重画）══
+         改前这一排是"三种画法 + 三种颜色"：
+           · 画法：▶ ⚡ 是实心填充，其余是线框，线框里还有 1.6 和 1.95 两种线宽；
+           · 颜色：普通项用正文色（近黑）被主色压住、启动/全部启动用主色、删除用危险红；
+           · 缩放：Path 的 Stretch=Uniform 是按"墨迹包围盒"撑满 16px，
+             于是 16×16 的方框和 11×17 的插头放大倍数不同，出来的线宽也跟着不同。
+         现在统一成：一套墨色（标题栏那排图标的 TextSecondaryBrush）、一种画法
+         （只描边；▶ ■ ⚡ 三颗保留实心剪影，理由同标题栏的 GitHub 猫标）、
+         一个比例尺（改用 Controls/MenuGlyph 的固定 20 单位画布，见该文件的注释）。
+         重画时顺手压掉了一批"16px 下会糊"的细节：插头去掉多余倒角、
+         从站框由三条线减到两条、全部启动去掉末尾那道竖杠（▶▶ 已经够表意）。 -->
+    <StreamGeometry x:Key="IconConnection">M9 3.8v4 M15 3.8v4 M6 7.8h12v3.2a6 6 0 0 1-12 0z M12 17v3.2</StreamGeometry>
+    <StreamGeometry x:Key="IconServer">M5.6 4.4h12.8a1.8 1.8 0 0 1 1.8 1.8v11.6a1.8 1.8 0 0 1-1.8 1.8H5.6a1.8 1.8 0 0 1-1.8-1.8V6.2a1.8 1.8 0 0 1 1.8-1.8z M8.4 9.4h7.2 M8.4 13.8h4.8</StreamGeometry>
+    <StreamGeometry x:Key="IconPlay">M9.2 5l9.6 7-9.6 7z</StreamGeometry>
+    <StreamGeometry x:Key="IconStop">M7.6 6.2h8.8a1.6 1.6 0 0 1 1.6 1.6v8.4a1.6 1.6 0 0 1-1.6 1.6H7.6a1.6 1.6 0 0 1-1.6-1.6V7.8a1.6 1.6 0 0 1 1.6-1.6z</StreamGeometry>
+    <StreamGeometry x:Key="IconPlayAll">M3.4 5.6v12.8l8.8-6.4z M11.8 5.6v12.8l8.8-6.4z</StreamGeometry>
+    <StreamGeometry x:Key="IconStopAll">M3.6 7.8a1.6 1.6 0 0 1 1.6-1.6h4.6a1.6 1.6 0 0 1 1.6 1.6v8.4a1.6 1.6 0 0 1-1.6 1.6H5.2a1.6 1.6 0 0 1-1.6-1.6z M12.6 7.8a1.6 1.6 0 0 1 1.6-1.6h4.6a1.6 1.6 0 0 1 1.6 1.6v8.4a1.6 1.6 0 0 1-1.6 1.6h-4.6a1.6 1.6 0 0 1-1.6-1.6z</StreamGeometry>
+    <StreamGeometry x:Key="IconAddPoint">M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M12 8v8 M8 12h8</StreamGeometry>
+    <!-- 铅笔：去掉原来那道"笔尖分界线"，16px 下它和笔身轮廓会粘成一块污渍 -->
+    <StreamGeometry x:Key="IconEdit">M16.6 3.6a2.6 2.6 0 0 1 3.7 3.7L8.9 18.7 4.3 19.9l1.2-4.6z</StreamGeometry>
+    <!-- 垃圾桶：桶身改圆底、开口放宽，缩到 16px 才不像一个"红方块" -->
+    <StreamGeometry x:Key="IconDelete">M5 7.4h14 M9.4 7.4V4.6h5.2v2.8 M6.7 7.4l.8 11.8a1.4 1.4 0 0 0 1.4 1.3h6.2a1.4 1.4 0 0 0 1.4-1.3l.8-11.8 M10.2 11.2v5.6 M13.8 11.2v5.6</StreamGeometry>
+    <!-- 报文解析：两道内线拉开到 4.6 个单位。原来贴在 12.2/15.8，
+         缩到 16px 后线缝只剩 1.3px，两条线和文档边框糊成一个"▤" -->
+    <StreamGeometry x:Key="IconParse">M6.8 3.8h6.4l3.8 3.8v12.4H6.8z M13.2 3.8v3.8h3.8 M9.6 11.6h4.8 M9.6 16.2h4.8</StreamGeometry>
+    <StreamGeometry x:Key="IconClear">M6.6 6.6l10.8 10.8 M17.4 6.6L6.6 17.4</StreamGeometry>
+    <StreamGeometry x:Key="IconBatch">M13.4 3 5.6 13.4h5l-1 7.4 8-10.4h-5.2z</StreamGeometry>
+    <StreamGeometry x:Key="IconPlus">M12 5.4v13.2 M5.4 12h13.2</StreamGeometry>
+    <!-- 批量创建：三个堆叠的方框 + 一个加号，表示"一次建多个" -->
+    <StreamGeometry x:Key="IconBatchCreate">M4 4h10v10H4z M7 17h13V7 M17 12v6 M14 15h6</StreamGeometry>
+    <!-- 侧栏开合：左窄右宽的分栏 -->
+    <StreamGeometry x:Key="IconSidebar">M3 4h18v16H3z M9 4v16</StreamGeometry>
+    <!-- 报文监视：三条长度递减的记录行（原来四条，16px 下线缝比线还宽，糊成一块） -->
+    <StreamGeometry x:Key="IconTraffic">M4.6 6.6h14.8 M4.6 11.4h14.8 M4.6 16.2h9.4</StreamGeometry>
+    <!-- 图钉：上部梯形钉头 + 下部宽挡板 + 针，钉住/拔出的语义一眼能懂 -->
+    <StreamGeometry x:Key="IconPin">M9 3h6v5l2 2v2H7v-2l2-2z M12 12v9</StreamGeometry>
+
+    <!-- ══ 第二轮图标：菜单项与标题栏用 ══
+         和上面同一套语言（24×24、圆头圆角、只描边不填充），
+         唯一的例外是 GitHub 的猫标——品牌标识是实心剪影，描边画出来不像。 -->
+    <StreamGeometry x:Key="IconFile">M6 3h8l4 4v14H6z M13.5 3v4.5H18</StreamGeometry>
+    <StreamGeometry x:Key="IconPoints">M4 6h2.5 M10 6h10 M4 12h2.5 M10 12h10 M4 18h2.5 M10 18h10</StreamGeometry>
+    <!-- 分组方式切换：上下两条反向箭头，一眼是"换个分法"而不是"拉个排序" -->
+    <StreamGeometry x:Key="IconSwap">M4 8h15 M16 5l3 3-3 3 M20 16H5 M8 13l-3 3 3 3</StreamGeometry>
+
+    <!-- 设置（齿轮）与返回（左箭头）。
+         齿轮用 6 齿 + 中心圆孔的线条画法：缩到 16px 还认得出是"设置"，
+         而"齿轮 = 设置"这个映射比任何自创图标都省解释。 -->
+    <!-- 设置：6 齿齿轮 + 中心圆孔。
+       原来那版是"12 个尖齿的星形"，小尺寸下齿全糊成一圈锯齿，看着不像齿轮。
+       这一版齿顶/齿根都走圆弧、侧壁直线收口，再靠 StrokeJoin=Round 把转角磨圆，
+       24 视框里齿形仍然分得清（实际渲染 16px）。 -->
+    <StreamGeometry x:Key="IconSettings">M9.75 2.26 A10.0 10.0 0 0 1 14.25 2.26 L14.70 5.65 A6.9 6.9 0 0 1 16.15 6.49 L19.31 5.18 A10.0 10.0 0 0 1 21.56 9.08 L18.85 11.16 A6.9 6.9 0 0 1 18.85 12.84 L21.56 14.92 A10.0 10.0 0 0 1 19.31 18.82 L16.15 17.51 A6.9 6.9 0 0 1 14.70 18.35 L14.25 21.74 A10.0 10.0 0 0 1 9.75 21.74 L9.30 18.35 A6.9 6.9 0 0 1 7.85 17.51 L4.69 18.82 A10.0 10.0 0 0 1 2.44 14.92 L5.15 12.84 A6.9 6.9 0 0 1 5.15 11.16 L2.44 9.08 A10.0 10.0 0 0 1 4.69 5.18 L7.85 6.49 A6.9 6.9 0 0 1 9.30 5.65 L9.75 2.26 Z M14.90 12.00 A2.9 2.9 0 1 1 9.10 12.00 A2.9 2.9 0 1 1 14.90 12.00 Z</StreamGeometry>
+    <StreamGeometry x:Key="IconBack">M10 5l-7 7 7 7 M3 12h11</StreamGeometry>
+    <!-- 工具：三条带滑块的横轨，比"扳手+螺丝刀"更好认，也不必画一堆小圆弧 -->
+    <StreamGeometry x:Key="IconTool">M3 8.5h18 M3 15.5h18 M8 5.2v6.6 M16 12.2v6.6</StreamGeometry>
+    <StreamGeometry x:Key="IconEye">M2 12S5.8 4.8 12 4.8 22 12 22 12 18.2 19.2 12 19.2 2 12 2 12z M12 8.3a3.7 3.7 0 1 0 0 7.4 3.7 3.7 0 0 0 0-7.4z</StreamGeometry>
+    <StreamGeometry x:Key="IconHelp">M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M9.7 9.5a2.4 2.4 0 0 1 4.7.5c0 1.7-2.4 2-2.4 3.6 M12 17.2v.01</StreamGeometry>
+    <!-- 关于：圆圈里一个 i（"帮助"那个问号已经不用了，两个要能分开认） -->
+    <StreamGeometry x:Key="IconInfo">M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M12 11.2v5.4 M12 7.7v.02</StreamGeometry>
+    <StreamGeometry x:Key="IconFolderOpen">M3 8V6a1 1 0 0 1 1-1h4.5l2 2H20a1 1 0 0 1 1 1v1 M3 8h18l-2 9.5a1 1 0 0 1-1 .8H4.6a1 1 0 0 1-1-.8z</StreamGeometry>
+    <StreamGeometry x:Key="IconSave">M5 4h10.5L19 7.5V20H5z M8 4v5h7V4 M8 20v-6h8v6</StreamGeometry>
+    <StreamGeometry x:Key="IconExport">M12 3v10 M8.6 6.4 12 3l3.4 3.4 M4 14v4.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V14</StreamGeometry>
+    <StreamGeometry x:Key="IconExit">M14 4h3.5A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5H14 M10 8l-4 4 4 4 M6 12h9</StreamGeometry>
+    <StreamGeometry x:Key="IconCopy">M9 9h10v11H9z M5 15V4h10</StreamGeometry>
+    <!-- 初始化数据：圆柱形数据库，一眼区分于"新增一行" -->
+    <StreamGeometry x:Key="IconDatabase">M12 3c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3z M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6 M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3</StreamGeometry>
+    <!-- 缓变：一条带起伏的波形 -->
+    <StreamGeometry x:Key="IconWave">M3 12h3l2.5-6 3.5 12 3-9 2 3h4</StreamGeometry>
+    <StreamGeometry x:Key="IconShieldCheck">M12 3l7 2.8V12c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V5.8z M9 12l2.2 2.2L15.5 10</StreamGeometry>
+    <StreamGeometry x:Key="IconCodec">M9 7l-5 5 5 5 M15 7l5 5-5 5</StreamGeometry>
+    <StreamGeometry x:Key="IconChart">M4 4v16h16 M7.5 15l3-4.2 3 2.6 4.5-6.4</StreamGeometry>
+    <StreamGeometry x:Key="IconPalette">M12 3a9 9 0 0 0 0 18h1.5a1.8 1.8 0 0 0 0-3.6 1.8 1.8 0 0 1 0-3.6H16A5 5 0 0 0 16 3z M7.5 8.5v.01 M11 6.5v.01 M15 8v.01 M6 12.5v.01</StreamGeometry>
+    <!-- 检查更新：云 + 下箭头 -->
+    <StreamGeometry x:Key="IconCloudDownload">M7 17.5a4 4 0 0 1 .5-7.96 5.5 5.5 0 0 1 10.5 1.2A3.9 3.9 0 0 1 18 17.5 M12 11.5v7 M9.2 15.7 12 18.5l2.8-2.8</StreamGeometry>
+    <!-- GitHub：品牌剪影，实心（不套描边样式） -->
+    <StreamGeometry x:Key="IconGitHub">M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.9-1.29 2.74-1.02 2.74-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.33 4.69-4.56 4.94.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2z</StreamGeometry>
+    <StreamGeometry x:Key="IconCheck">M5 12.5l4.5 4.5L19 7.5</StreamGeometry>
+
+
+    <!-- ══ 底部监视面板：页签与内容区连成一体的卡片 ══
+         用户的原话是"点中的页签在视角上和下面的内容连起来，角上都是圆角"。
+         所以这里不再是"一块面板里飘着几颗独立胶囊"，改成 chrome 式页签：
+           · 整块面板仍是 8 圆角的卡片（Border.panel）；
+           · 页签条是一条 SurfaceAltBrush 浅色带，顶部两角跟着卡片一起圆；
+           · 选中的页签底色换成 SurfaceBrush —— 和下面内容区**同一种颜色**，
+             而且下沿正好压在页签条底边，于是它"长"进了内容区，看上去连续；
+           · 内容区只圆下面两角 —— 上面两角要跟页签条贴成一条直线，圆了会露缺口。
+         为什么这两个模板都要自己写：
+           ① SimpleTheme 的 TabItem 模板把选中底色直接写在模板子元素上
+              （不是 TemplateBinding Background），外部 Style 优先级不够，改不动；
+           ② SimpleTheme 的 TabControl 模板里，页签条是 DockPanel 的 Auto 子项、
+              内容区是填充子项，两者之间没有任何可调的缝隙，也没有给"页签压住接缝"
+              留位置，所以只能换模板。
+         模板部件名必须与 SimpleTheme 完全一致，缺一个控件就找不到宿主：
+           PART_ItemsPresenter / PART_SelectedContentHost / PART_SelectedContentHost2
+         （后两个是换页过渡用的双宿主，只保留一个的话切页时内容会闪一下再消失）。 -->
+    <ControlTheme x:Key="PanelTabControl" TargetType="TabControl">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="ItemContainerTheme" Value="{StaticResource ChipTabItem}" />
+      <Setter Property="ItemsPanel">
+        <ItemsPanelTemplate>
+          <StackPanel Orientation="Horizontal" />
+        </ItemsPanelTemplate>
+      </Setter>
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Grid RowDefinitions="Auto,*">
+            <!-- 页签条：底部不留内边距，选中页签的下沿才能正好压住内容区顶边 -->
+            <Border Name="PART_HeaderStrip" Grid.Row="0"
+                    Background="{DynamicResource SurfaceAltBrush}"
+                    CornerRadius="7,7,0,0"
+                    Padding="6,5,6,0">
+              <ItemsPresenter Name="PART_ItemsPresenter"
+                              ItemsPanel="{TemplateBinding ItemsPanel}" />
+            </Border>
+
+            <!-- 内容区：只圆下面两角。
+                 Content / ContentTemplate 必须自己 TemplateBinding 过来 ——
+                 TabControl 靠 PART_SelectedContentHost 显示"选中页签的 Content"，
+                 只放一个空的 ContentPresenter 进去，页签是对的、内容却是空白，
+                 整个"输出信息框"就消失了（13.0 版踩过）。
+                 ⚠ PART_SelectedContentHost2 千万不能也绑 Content：
+                 那一只是切页过渡时暂存旧内容的，两边都绑的话，
+                 同一个 DataGrid 会被两个宿主同时要求当子元素，启动直接抛
+                 "already has a visual parent" 崩掉。
+                 HorizontalContentAlignment 给 Stretch，否则 DataGrid 只有内容那么宽，
+                 右边会留一条面板底色。 -->
+            <Border Name="PART_ContentCard" Grid.Row="1"
+                    Background="{DynamicResource SurfaceBrush}"
+                    CornerRadius="0,0,7,7">
+              <Panel>
+                <ContentPresenter Name="PART_SelectedContentHost2"
+                                  IsVisible="False"
+                                  HorizontalContentAlignment="Stretch"
+                                  VerticalContentAlignment="Stretch" />
+                <ContentPresenter Name="PART_SelectedContentHost"
+                                  Content="{TemplateBinding SelectedContent}"
+                                  ContentTemplate="{TemplateBinding SelectedContentTemplate}"
+                                  HorizontalContentAlignment="Stretch"
+                                  VerticalContentAlignment="Stretch" />
+              </Panel>
+            </Border>
+          </Grid>
+        </ControlTemplate>
+      </Setter>
+    </ControlTheme>
+
+    <!-- ══ 底部页签（ASDU 报文监视 / 链路日志）的单颗页签 ══
+         形状是"上圆下平"：上两角 6 圆角，下沿直角并贴死内容区。
+         TabItem 只负责画标题，内容由 TabControl 的 PART_SelectedContentHost 呈现，
+         所以这个模板里没有 Content 的 presenter 是对的。
+         顶边那 2px 描边是主题色点缀的载体：未选中时描边透明，选中时换成 PrimaryBrush。
+         为什么不做成"另起一条 Border 当横杠"：模板里的子元素多一层，
+         选中态的样式选择器就得写 /template/ Border#root > Panel > Border#accent，
+         这条路径没匹配上，横杠根本不画（13.0 版实测就是如此，白页签上光秃秃的）。
+         挂在 root 自己的 BorderBrush 上，选择器和背景色走同一条已验证的路径，
+         顺带还少一个元素、少一次布局。 -->
+    <ControlTheme x:Key="ChipTabItem" TargetType="TabItem">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="root" Background="Transparent"
+                  BorderBrush="Transparent" BorderThickness="0,2,0,0"
+                  CornerRadius="6,6,0,0"
+                  Margin="1,0" Padding="12,0" Height="28">
+            <ContentPresenter Name="PART_ContentPresenter"
+                              Content="{TemplateBinding Header}"
+                              ContentTemplate="{TemplateBinding HeaderTemplate}"
+                              VerticalAlignment="Center"
+                              HorizontalAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </ControlTheme>
+
+    <!-- ══ 菜单：下拉项与右键项（AppMenuItem）══
+         为什么整份模板自己写：SimpleTheme 的 MenuItem 模板里，
+         第一列是写死的 `Width="20"`，不管有没有图标都占着 20px——
+         这就是"前面看着太空"的来源。这里改成 26px 的图标列并把它用起来，
+         同时给每一行套圆角、给弹层加圆角卡片。
+
+         模板部件名必须与 SimpleTheme 完全一致，否则 MenuItem 找不到
+         PART_HeaderPresenter / PART_Popup 就会整条菜单不显示。 -->
+    <ControlTheme x:Key="AppMenuItem" TargetType="MenuItem">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="root" Background="{TemplateBinding Background}"
+                  CornerRadius="{TemplateBinding CornerRadius}" Margin="0,1">
+            <Grid ColumnDefinitions="32,*,14">
+              <!-- 勾选/单选标记和图标共用第一列：两者不会同时出现，
+                   靠伪类切换，省一列宽度，也让"有图标"和"被勾选"位置一致。
+                   列宽 32 是量出来的：图标 16 + 左内边距 8 + 图标与文字的间隙 8，
+                   再窄图标就贴上文字了（第一版 26 只剩 2px 间隙，看着挤成一团）。 -->
+              <Panel Grid.Column="0" Margin="8,0,0,0">
+                <ContentControl Name="PART_ToggleIconPresenter" Width="15" Height="15"
+                                IsVisible="False" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                <ContentControl Name="PART_IconPresenter" Width="16" Height="16"
+                                HorizontalAlignment="Left" VerticalAlignment="Center"
+                                Content="{TemplateBinding Icon}" />
+              </Panel>
+
+              <ContentPresenter Name="PART_HeaderPresenter" Grid.Column="1"
+                                Margin="0,0,10,0" VerticalAlignment="Center"
+                                Content="{TemplateBinding Header}"
+                                ContentTemplate="{TemplateBinding HeaderTemplate}">
+                <ContentPresenter.DataTemplates>
+                  <DataTemplate DataType="sys:String">
+                    <AccessText Text="{Binding}" />
+                  </DataTemplate>
+                </ContentPresenter.DataTemplates>
+              </ContentPresenter>
+
+              <!-- 我们没有用到 InputGesture，这一列留空即可；
+                   子菜单箭头放最后一列，靠 :empty 伪类隐藏 -->
+              <Path Name="rightArrow" Grid.Column="2" Width="5" Height="8" Stretch="Uniform"
+                    VerticalAlignment="Center" Margin="0,0,6,0"
+                    Data="M0,0L4,3.5 0,7z" Fill="{DynamicResource TextDisabledBrush}" />
+
+              <Popup Name="PART_Popup" IsLightDismissEnabled="False"
+                     IsOpen="{TemplateBinding IsSubMenuOpen, Mode=TwoWay}"
+                     Placement="RightEdgeAlignedTop">
+                <Border Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderLineBrush}"
+                        BorderThickness="1" CornerRadius="10" ClipToBounds="True">
+                  <ScrollViewer Theme="{StaticResource SimpleMenuScrollViewer}">
+                    <ItemsPresenter Name="PART_ItemsPresenter" Margin="5"
+                                    Grid.IsSharedSizeScope="True"
+                                    ItemsPanel="{TemplateBinding ItemsPanel}" />
+                  </ScrollViewer>
+                </Border>
+              </Popup>
+            </Grid>
+          </Border>
+        </ControlTemplate>
+      </Setter>
+
+      <!-- 分隔线：SimpleTheme 里就是一根默认 Separator，又细又贴边 -->
+      <Style Selector="^:separator">
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Template">
+          <ControlTemplate>
+            <Border Height="1" Margin="10,5" Background="{DynamicResource DividerBrush}" />
+          </ControlTemplate>
+        </Setter>
+      </Style>
+
+      <Style Selector="^:selected /template/ Border#root">
+        <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+      </Style>
+      <Style Selector="^:pointerover /template/ Border#root">
+        <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+      </Style>
+      <Style Selector="^:empty /template/ Path#rightArrow">
+        <Setter Property="IsVisible" Value="False" />
+      </Style>
+      <Style Selector="^:disabled">
+        <Setter Property="Opacity" Value="0.45" />
+      </Style>
+
+      <Style Selector="^:toggle /template/ ContentControl#PART_ToggleIconPresenter,
+                       ^:radio /template/ ContentControl#PART_ToggleIconPresenter">
+        <Setter Property="IsVisible" Value="True" />
+      </Style>
+      <Style Selector="^:toggle /template/ ContentControl#PART_IconPresenter,
+                       ^:radio /template/ ContentControl#PART_IconPresenter">
+        <Setter Property="IsVisible" Value="False" />
+      </Style>
+      <Style Selector="^:checked /template/ ContentControl#PART_ToggleIconPresenter">
+        <Setter Property="Content">
+          <Template>
+            <Path Stretch="Uniform" Width="13" Height="13" StrokeThickness="2"
+                  Stroke="{DynamicResource PrimaryBrush}" StrokeLineCap="Round"
+                  Data="{StaticResource IconCheck}" />
+          </Template>
+        </Setter>
+      </Style>
+    </ControlTheme>
+
+    <!-- ══ 菜单栏顶级项（文件/从站/…）══
+         SimpleTheme 里顶级项用的是另一个主题（SimpleTopLevelMenuItem），
+         那个模板**连图标位都没有**，所以顶级项必须单独给一份。 -->
+    <ControlTheme x:Key="AppMenuTopLevel" TargetType="MenuItem">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="8,0" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="root" Background="{TemplateBinding Background}"
+                  CornerRadius="{TemplateBinding CornerRadius}"
+                  Padding="{TemplateBinding Padding}">
+            <Panel>
+              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <ContentControl Name="PART_IconPresenter" Width="16" Height="16"
+                                VerticalAlignment="Center"
+                                Content="{TemplateBinding Icon}" />
+                <ContentPresenter Name="PART_HeaderPresenter" VerticalAlignment="Center"
+                                  Content="{TemplateBinding Header}"
+                                  ContentTemplate="{TemplateBinding HeaderTemplate}">
+                  <ContentPresenter.DataTemplates>
+                    <DataTemplate DataType="sys:String">
+                      <AccessText Text="{Binding}" />
+                    </DataTemplate>
+                  </ContentPresenter.DataTemplates>
+                </ContentPresenter>
+              </StackPanel>
+
+              <Popup Name="PART_Popup" IsLightDismissEnabled="True"
+                     IsOpen="{TemplateBinding IsSubMenuOpen, Mode=TwoWay}"
+                     Placement="BottomEdgeAlignedLeft"
+                     OverlayInputPassThroughElement="{Binding $parent[Menu]}">
+                <Border Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderLineBrush}"
+                        BorderThickness="1" CornerRadius="10" ClipToBounds="True"
+                        MinWidth="190">
+                  <ScrollViewer Theme="{StaticResource SimpleMenuScrollViewer}">
+                    <ItemsPresenter Name="PART_ItemsPresenter" Margin="5"
+                                    Grid.IsSharedSizeScope="True"
+                                    ItemsPanel="{TemplateBinding ItemsPanel}" />
+                  </ScrollViewer>
+                </Border>
+              </Popup>
+            </Panel>
+          </Border>
+        </ControlTemplate>
+      </Setter>
+
+      <Style Selector="^:selected /template/ Border#root">
+        <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+      </Style>
+      <Style Selector="^:pointerover /template/ Border#root">
+        <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+      </Style>
+      <Style Selector="^:disabled">
+        <Setter Property="Opacity" Value="0.45" />
+      </Style>
+    </ControlTheme>
+  </Styles.Resources>
+
+  <!-- 窗口容器 -->
+  <Style Selector="Window">
+    <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />
+    <Setter Property="FontFamily" Value="Microsoft YaHei UI, Segoe UI, sans-serif" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+
+  <!-- 顶部菜栏：顶级项用带图标的主题，子菜单项统一走 AppMenuItem -->
+  <Style Selector="Menu">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="ItemContainerTheme" Value="{StaticResource AppMenuTopLevel}" />
+  </Style>
+  <!-- 右键菜单：SimpleTheme 的模板里 Border 用的是 TemplateBinding CornerRadius，
+       所以不必重写模板，设个圆角就够；顺带把底色和描边也换成主题令牌 -->
+  <Style Selector="ContextMenu">
+    <Setter Property="ItemContainerTheme" Value="{StaticResource AppMenuItem}" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Padding" Value="5" />
+    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+  </Style>
+  <!-- 任意 MenuItem 的子项都用同一份主题（子菜单里的项不会走 Menu/ContextMenu 那两条） -->
+  <Style Selector="MenuItem">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="ItemContainerTheme" Value="{StaticResource AppMenuItem}" />
+  </Style>
+  <!-- 菜单项图标：和工具条图标同一套语言，只是细一点、颜色淡一点 -->
+  <!-- ══ 菜单图标：MenuGlyph（自绘控件，按固定画布缩放）══
+       两处反馈都改在这里：
+       ① "看着比较糊" —— 图标只有 15px、描边 1.5（24 坐标系），缩完实际线宽
+          不到 1 个逻辑像素，125% 缩放下是 1.17 物理像素，半覆盖的像素只能是灰的，
+          看起来就是"虚"。现在框 16px、描边 2.0（24 坐标系），缩完 1.6 逻辑像素
+          ≈ 2 物理像素，线条才实。
+       ② "没有对齐" —— 原来用 Path 的 Stretch=Uniform，是"各自墨迹撑满 16px"，
+          宽扁图标和方图标缩放比不同、描边粗细跟着变，视觉上就是一高一低一粗一细。
+          换成 MenuGlyph 后所有图标共用同一个比例尺（固定 20 单位的画布窗口），
+          圆心/重心都在画布中心，因此天然对齐、粗细一致。
+       颜色用 MenuIconBrush（次要色压向主色 30%），每套主题各算一份。 -->
+  <Style Selector="ctl|MenuGlyph.menuIcon">
+    <Setter Property="Stroke" Value="{DynamicResource MenuIconBrush}" />
+    <Setter Property="StrokeThickness" Value="2" />
+    <Setter Property="Width" Value="16" />
+    <Setter Property="Height" Value="16" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <!-- 顶级项图标（标题栏那一排：文件 / 从站 / 通道 / 信息对象 / 工具 / 视图 / 帮助）
+       原来用主色蓝，理由是"它在标题栏上，跟着主色走能和主题胶囊连成一套"。
+       实际排在一起才看出问题：同一行右边那四颗（调色板 / GitHub / 云下载 / 齿轮）
+       是次要色 #5A6A80，左边七颗是主色蓝 #2775BC —— 一行里两套墨色，
+       左边像是"被选中的"（蓝色在这套 UI 里就是选中/强调的意思），其实并没有。
+       现在统一到右边那四颗的墨色 TextSecondaryBrush；描边也从 2.15 收到 2.0，
+       和右边一致（都是固定画布 20 单位 → 实际都是 1.6 逻辑像素）。 -->
+  <Style Selector="ctl|MenuGlyph.menuIconTop">
+    <Setter Property="Stroke" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="StrokeThickness" Value="2" />
+    <Setter Property="Width" Value="16" />
+    <Setter Property="Height" Value="16" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <!-- 悬停时图标加深，避免浅主色底上"图标比文字还淡" -->
+  <Style Selector="MenuItem:pointerover ctl|MenuGlyph.menuIcon">
+    <Setter Property="Stroke" Value="{DynamicResource PrimaryBrush}" />
+  </Style>
+
+  <!-- 工具条 -->
+  <Style Selector="Border.toolbar">
+    <Setter Property="Background" Value="{DynamicResource ToolbarBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="BorderThickness" Value="0,0,0,1" />
+    <Setter Property="Padding" Value="8,5" />
+  </Style>
+
+  <Style Selector="Button.tool">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="9,5" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="FontSize" Value="12" />
+    <!-- 悬停时底色渐变过去，别"啪"一下闪出来 -->
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.14" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="Button.tool:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+  </Style>
+
+  <!--
+    工具条图标（第十七轮重做）。
+    放在 Button.tool 里的 Path 会自动套用这个样式，
+    省得每个按钮都重复写 Stroke/StrokeThickness/尺寸。
+  -->
+  <!-- 侧栏分组头那三个"＋"小按钮仍是 Path（它们是 12~13px 的纯加号，
+       不值得为它引入 MenuGlyph）。颜色跟着工具条一起降到次要色，
+       否则同一屏上"工具条图标浅、侧栏小按钮深"，又是一处不一致。 -->
+  <Style Selector="Button.tool Path">
+    <Setter Property="Stroke" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="StrokeThickness" Value="1.95" />
+    <Setter Property="StrokeLineCap" Value="Round" />
+    <Setter Property="StrokeJoin" Value="Round" />
+    <Setter Property="Width" Value="16" />
+    <Setter Property="Height" Value="16" />
+    <Setter Property="Stretch" Value="Uniform" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <!-- ══ 工具条的 11 颗图标（主按钮区）══
+       改用 MenuGlyph 而不是 Path：Path 的 Uniform 按"墨迹包围盒"撑满控件，
+       同一句 StrokeThickness=1.95，插头（墨迹 12×18）缩成 1.73、
+       清空监视那个 ×（12×12）缩成 2.60 —— 一排里差五成。
+       MenuGlyph 按固定 20 单位画布等比缩放，一排图标共用同一个比例尺，
+       线宽、垂直对齐、"谁也别想比谁更厚重"这三件事一起解决。
+
+       颜色取 TextSecondaryBrush —— 和标题栏那排图标（调色板 / GitHub / 云下载 / 齿轮）
+       是同一个令牌、同一个墨色。以前这里是正文色，比标题栏那排更黑，
+       排在一起就像两套图标。 -->
+  <Style Selector="ctl|MenuGlyph.toolIcon">
+    <Setter Property="Stroke" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="StrokeThickness" Value="2" />
+    <Setter Property="Width" Value="16" />
+    <Setter Property="Height" Value="16" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <!-- 实心剪影（▶ ■ ⚡）：几何本身没有圆角，所以"描边同色"再走一遍，
+       让 2 个单位的同色描边把外角磨圆 —— 和旁边那些圆角线框才是一套笔画。
+       这与标题栏 GitHub 猫标是同一个例外：品牌/播放类形状实心才认得出来。 -->
+  <Style Selector="ctl|MenuGlyph.toolIcon.solid">
+    <Setter Property="Fill" Value="{DynamicResource TextSecondaryBrush}" />
+  </Style>
+
+  <!-- 悬停：和标题栏那排一样，墨色加深一档（不换色相） -->
+  <Style Selector="Button.tool:pointerover ctl|MenuGlyph.toolIcon">
+    <Setter Property="Stroke" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+  <Style Selector="Button.tool:pointerover ctl|MenuGlyph.toolIcon.solid">
+    <Setter Property="Fill" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+
+  <!-- 危险 / 主色动作的"语义色"只在悬停时出现。
+       静止态整排是同一个墨色（用户要的"颜色统一"），鼠标停上去才亮红/亮主色，
+       用来提示"这一下会做什么"，而不是给一排按钮各配一种颜色。
+       这两条必须排在上面两条通用悬停之后，同优先级下后写者胜。 -->
+  <Style Selector="Button.tool.danger:pointerover ctl|MenuGlyph.toolIcon">
+    <Setter Property="Stroke" Value="{DynamicResource DangerBrush}" />
+  </Style>
+  <Style Selector="Button.tool.danger:pointerover ctl|MenuGlyph.toolIcon.solid">
+    <Setter Property="Fill" Value="{DynamicResource DangerBrush}" />
+  </Style>
+  <Style Selector="Button.tool.accent:pointerover ctl|MenuGlyph.toolIcon">
+    <Setter Property="Stroke" Value="{DynamicResource PrimaryBrush}" />
+  </Style>
+  <Style Selector="Button.tool.accent:pointerover ctl|MenuGlyph.toolIcon.solid">
+    <Setter Property="Fill" Value="{DynamicResource PrimaryBrush}" />
+  </Style>
+
+  <!-- ══ 按钮的基础圆角：所有按钮共用一个数字 ══
+       问题是怎么出现的：主题（SimpleTheme）的按钮模板把 CornerRadius 当普通属性用，
+       默认值 0；而我们只给 `Button.primary` 单独写了圆角。
+       于是同一个弹窗里"确定"是圆角、"取消"是直角——两个并排的按钮
+       一个像这个软件、一个像 Windows 98，用户一眼就看见了。
+       这里补一条基础样式：凡是没有自己指定圆角的按钮都取 6，
+       和工具条（6）、次级按钮（subtle 6）、标题栏按钮（caption 6）对齐。
+       类选择器（Button.primary 等）优先级更高，仍然可以各按各的场景覆盖。 -->
+  <Style Selector="Button">
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+
+  <Style Selector="Button.primary">
+    <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource OnPrimaryBrush}" />
+    <Setter Property="Padding" Value="12,5" />
+    <!-- 原来这里是 4：和"取消"（模板默认 0）并排时，两个圆角一大一小，
+         现在统一到基础样式的 6，弹窗底部那一排才是一条线上的按钮 -->
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+  <Style Selector="Button.primary:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimaryHoverBrush}" />
+  </Style>
+
+  <!-- 面板 -->
+  <Style Selector="Border.panel">
+    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+  </Style>
+
+  <!-- ══ 底部监视面板收起后的样子（1.9.8）══
+       收起时整块只剩 36 高的一条，里面没有内容、只有一行提示文字。
+       底色换成 SurfaceAlt —— 和页签条在展开态用的底色是同一个令牌，
+       这样"收起"和"展开"两种状态的头部看起来是同一块东西，只是高度变了。 -->
+  <Style Selector="Border.panel.collapsed">
+    <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+  </Style>
+
+  <!-- ══ 监视面板右上角的小图标按钮（清空 / 收起展开）══
+       尺寸 24×24：页签高 28、同排的文字 11px，按钮再大就会顶出页签条，
+       再小则点不中（24 是 Windows 上仍然好点的下限）。
+       静止态完全透明——这一块的主角是报文表格，两个辅助动作不该和内容抢注意力。 -->
+  <Style Selector="Button.monitorAction">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Width" Value="24" />
+    <Setter Property="Height" Value="24" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="CornerRadius" Value="5" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.14" />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <Style Selector="Button.monitorAction:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource HoverBrush}" />
+  </Style>
+
+  <Style Selector="Button.monitorAction Path">
+    <Setter Property="Stroke" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="StrokeThickness" Value="1.8" />
+    <Setter Property="StrokeLineCap" Value="Round" />
+    <Setter Property="StrokeJoin" Value="Round" />
+    <Setter Property="Stretch" Value="Uniform" />
+    <Setter Property="Width" Value="12" />
+    <Setter Property="Height" Value="12" />
+  </Style>
+
+  <Style Selector="Button.monitorAction:pointerover Path">
+    <Setter Property="Stroke" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+
+  <Style Selector="TextBlock.panelTitle">
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    <Setter Property="Padding" Value="10,6" />
+  </Style>
+
+  <Style Selector="TextBlock.hint">
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="FontSize" Value="11" />
+  </Style>
+
+  <!-- ── 输入类控件：统一圆角 ──────────────────────────────────
+       之前完全没定义 TextBox / ComboBox / NumericUpDown 的样式，
+       它们一直走内置模板的直角边框，跟四周 8px 圆角的卡片放在一起像是拼错了。
+       这里只统一"外形"（圆角、最小高度、内边距、垂直居中），
+       配色与焦点态交给主题，避免把六套主题的颜色写死进全局样式。
+       局部的类样式（如 TextBox.cellEdit）优先级更高，仍可覆盖。 -->
+  <Style Selector="TextBox">
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="MinHeight" Value="30" />
+    <Setter Property="Padding" Value="8,0" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+
+  <Style Selector="ComboBox">
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="MinHeight" Value="30" />
+    <Setter Property="Padding" Value="8,0" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+
+  <Style Selector="NumericUpDown">
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="MinHeight" Value="30" />
+  </Style>
+
+  <!-- 多行输入不要被 MinHeight 拉成一行高，也不该垂直居中 -->
+  <Style Selector="TextBox[AcceptsReturn=True]">
+    <Setter Property="VerticalContentAlignment" Value="Top" />
+    <Setter Property="Padding" Value="8,6" />
+  </Style>
+
+  <!-- ── 下拉列表（弹出层）─────────────────────────────────────
+       只给 ComboBox 本体设圆角是不够的：展开后的那个列表是独立 Popup，
+       里面的 Border 用的是模板自带圆角（0），所以会出现"框是圆的、弹出来是尖的"。
+       这里把弹层的 Border 也统一成 6px，配色跟卡片一致。
+
+       注：SimpleTheme 里这个 Border **没有 x:Name**（实测读出来是"(无名)"），
+       所以不能用 Border#PopupBorder 这种具名选择器 —— 写了也不报错，就是不生效。
+       这里按结构定位：Popup 的直接子 Border。自检 dialog-combo-popup 会读实际圆角。 -->
+  <Style Selector="ComboBox /template/ Popup > Border">
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Padding" Value="2" />
+  </Style>
+
+  <!-- 下拉项：悬停与选中都要跟主题走。
+       SimpleTheme 默认的选中色是系统蓝，跟这套暖色强调色放在一起很跳。 -->
+  <Style Selector="ComboBoxItem">
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="Padding" Value="8,5" />
+    <Setter Property="MinHeight" Value="28" />
+  </Style>
+
+  <Style Selector="ComboBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource HoverBrush}" />
+  </Style>
+
+  <Style Selector="ComboBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource PrimarySoftTextBrush}" />
+  </Style>
+
+  <!-- ── "?" 悬停提示 ─────────────────────────────────────────
+       原则：界面上只留必要的即时说明，成段的解释收进 ToolTip。
+       六个字的图标永远比六行小字省地方，而且不打断阅读。
+
+       外形不在这里定义：`Button.hintIcon` 这组 Setter 对 HintIcon 不生效
+       （读出来 Width=NaN、CornerRadius=0，样式没匹配上），
+       所以那些属性搬进了 HintIcon.axaml，用 Border 直接画。
+       这里只留 ToolTip 本身的气泡样式。 -->
+
+  <!-- ToolTip：深色圆角气泡。
+       配色用"反色"而不是新增令牌 —— 背景取正文色、文字取卡片色，
+       浅色主题下就是深底浅字，深色主题下自动翻转成浅底深字，
+       六套主题都不用各改一遍，也不会漏。 -->
+  <Style Selector="ToolTip">
+    <Setter Property="Background" Value="{DynamicResource TextPrimaryBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource SurfaceBrush}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Padding" Value="10,7" />
+    <Setter Property="MaxWidth" Value="340" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+
+  <Style Selector="ToolTip /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource TextPrimaryBrush}" />
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+
+  <!-- 数据表格 -->
+  <Style Selector="DataGrid">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="GridLinesVisibility" Value="Horizontal" />
+    <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="RowHeight" Value="30" />
+    <Setter Property="Background" Value="Transparent" />
+    <!-- 主题默认的行底色是淡蓝，跟这套暖色强调色不搭，先拉回白色，
+       隔行条再单独用下面的 nth-child 规则加一点点灰 -->
+    <Setter Property="RowBackground" Value="{DynamicResource SurfaceBrush}" />
+    <!-- 去掉 DataGrid 自带那圈 #AAAAAA 描边。
+         本工具所有表格都嵌在 Border.panel 卡片里，卡片自己已经有 1px BorderLineBrush，
+         两个叠在一起就是"卡片边里再套一条灰边"，圆角处尤其难看（灰线贴着圆角内沿走）。
+         更要紧的是这个 #AAAAAA 是 SimpleTheme 写死的，不跟主题走，
+         深色主题里会变成一道扎眼的亮灰。
+         去掉之后表格的边界完全交给外层卡片，圆角也就能对齐了。 -->
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+
+  <!-- 隔行底色在代码里给（MainWindow.OnDataGridLoadingRow）。
+       Avalonia 的 DataGrid 没有 WPF 那个 AlternatingRowBackground 属性（写了报 AVLN2000），
+       而 `DataGridRow:nth-child(2n) /template/ Rectangle#BackgroundRectangle` 在
+       虚拟化行容器上不生效（实测所有行仍是同一个底色）。
+       改用 LoadingRow 按 GetIndex() 的奇偶赋 Row.Background，行复用时会重新触发，
+       滚动到十万行也不会错位。 -->
+  <Style Selector="DataGridColumnHeader">
+    <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Height" Value="32" />
+    <Setter Property="Padding" Value="10,0" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="BorderThickness" Value="0,0,0,1" />
+    <!-- 表头文字要能居中，必须让 ContentPresenter 撑满列宽：
+         ContentControl 的 HorizontalContentAlignment 默认是 Left，
+         此时 presenter 只有文字那么宽，里面 TextBlock 的 TextAlignment=Center
+         没有任何多余宽度可居中，看起来就像一直左对齐。 -->
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+  </Style>
+
+  <!-- 底部监视面板里的表格：表头改成透明（= 露出面板底色）。
+       面板结构是"浅色页签条 + 白色内容卡"，表头那圈 SurfaceAltBrush 会和页签条
+       连成上下两条同色横带，选中的白页签夹在中间，看着像一道夹心，
+       "页签长进内容区"的观感就没了。文字仍靠字号 + 粗细 + 下边线与数据行区分。
+       描边不用在这里单独关：全局面板里的表格都已经 `BorderThickness=0`（见上面的 DataGrid 样式）。 -->
+  <Style Selector="DataGrid.monitorGrid DataGridColumnHeader">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+
+  <!-- 行悬停 / 选中：换成主题的暖色，别用系统蓝（和整体橙红强调色打架）。
+       注意必须打到模板里的 BackgroundRectangle 上，直接设 DataGridRow.Background
+       会被 SimpleTheme 的 selected 样式盖掉。 -->
+  <Style Selector="DataGridRow:pointerover /template/ Rectangle#BackgroundRectangle">
+    <Setter Property="Fill" Value="{DynamicResource RowHoverBrush}" />
+  </Style>
+  <Style Selector="DataGridRow:selected /template/ Rectangle#BackgroundRectangle">
+    <Setter Property="Fill" Value="{DynamicResource RowSelectedBrush}" />
+  </Style>
+
+  <!-- 只换底色会踩坑：SimpleTheme 在 hover/selected 状态下把前景设成了白色
+       （它原本配的是深色强调底）。底色一换成浅色，白字就基本看不见了，
+       所以这几个状态必须连前景一起改回来，单元格也一并覆盖（选中态会单独设置）。 -->
+  <Style Selector="DataGridRow:pointerover">
+    <Setter Property="Foreground" Value="{DynamicResource RowTextBrush}" />
+  </Style>
+  <Style Selector="DataGridRow:selected">
+    <Setter Property="Foreground" Value="{DynamicResource RowTextBrush}" />
+  </Style>
+  <Style Selector="DataGridRow:pointerover DataGridCell">
+    <Setter Property="Foreground" Value="{DynamicResource RowTextBrush}" />
+  </Style>
+  <Style Selector="DataGridRow:selected DataGridCell">
+    <Setter Property="Foreground" Value="{DynamicResource RowTextBrush}" />
+  </Style>
+
+  <!-- ══ 点表单元格 ══
+       垂直居中打在**单元格**上，不是打在文字上：
+       DataGridCell 的 ContentPresenter 默认把内容顶到上沿（VerticalContentAlignment=Top），
+       内容只有一行字高，排在 30px 的行里就贴着上边。只给 TextBlock 设
+       VerticalAlignment=Center 是没用的——它在自己的槽位里已经是居中的，
+       只是那个槽位本身贴在上沿。
+       横向必须 Stretch：不 Stretch 的话模板根元素只有内容那么宽，
+       里面再怎么设 HorizontalAlignment=Center 也动不了位置。 -->
+  <Style Selector="DataGridCell">
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+  </Style>
+
+  <Style Selector="TextBlock.cellText">
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Margin" Value="0,0,8,0" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+
+  <!-- 类型、时间这类辅助列压低存在感，把视觉重量留给名称和值 -->
+  <Style Selector="TextBlock.cellText.muted">
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="FontSize" Value="11.5" />
+  </Style>
+
+  <Style Selector="TextBlock.cellText.value">
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <!-- 就地编辑的输入框：细边框、主色描边，和单元格等高，出现时不把行撑开 -->
+  <Style Selector="TextBox.cellEdit">
+    <Setter Property="Height" Value="22" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Padding" Value="6,0" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="CornerRadius" Value="5" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}" />
+    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+  </Style>
+
+  <!-- 品质徽标：圆角胶囊，底色/文字色由 ViewModel 按异常程度给 -->
+  <Style Selector="Border.qualityBadge">
+    <Setter Property="CornerRadius" Value="9" />
+    <Setter Property="Padding" Value="8,1" />
+    <Setter Property="MinWidth" Value="54" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.qualityBadge TextBlock">
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+
+  <!-- 通道状态灯的呼吸光晕：监听中/已连接时缓慢明灭，一眼能看出"活着" -->
+  <Style Selector="Ellipse.halo">
+    <Style.Animations>
+      <Animation Duration="0:0:1.8" IterationCount="INFINITE" PlaybackDirection="Alternate">
+        <KeyFrame Cue="0%">
+          <Setter Property="Opacity" Value="0.18" />
+        </KeyFrame>
+        <KeyFrame Cue="100%">
+          <Setter Property="Opacity" Value="0.55" />
+        </KeyFrame>
+      </Animation>
+    </Style.Animations>
+  </Style>
+
+  <!-- 状态栏
+       高度写死 30、上下内边距 0：原来是 Padding="10,4" 让高度跟着内容算，
+       结果文字贴着栏的下沿（实测状态栏底色只有 12px 高，文字整个跑到栏外去了）。
+       现在高度固定、只留左右内边距，子元素靠 VerticalAlignment=Center 居中。 -->
+  <Style Selector="Border.statusbar">
+    <Setter Property="Background" Value="{DynamicResource ToolbarBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="BorderThickness" Value="0,1,0,0" />
+    <Setter Property="Height" Value="30" />
+    <Setter Property="Padding" Value="8,0" />
+  </Style>
+
+  <!-- 树 -->
+  <Style Selector="TreeViewItem">
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+
+  <!-- 徽标文字（TextBlock 无 CornerRadius 属性，圆角去掉） -->
+  <Style Selector="TextBlock.badge">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource PrimarySoftTextBrush}" />
+    <Setter Property="Padding" Value="6,1" />
+    <Setter Property="FontSize" Value="11" />
+  </Style>
+  <!-- 小圆角候选按钮：本机 IP 一键填入用。
+       FontSize 11 + Padding 8,2 让它看起来像"标签"，不抢主按钮的视觉重量。 -->
+  <Style Selector="Button.chip">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Padding" Value="7,1" />
+    <Setter Property="MinHeight" Value="22" />
+    <Setter Property="Height" Value="22" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource PrimarySoftTextBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="CornerRadius" Value="11" />
+  </Style>
+
+  <Style Selector="Button.chip:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
+    <Setter Property="TextBlock.Foreground" Value="{DynamicResource OnPrimaryBrush}" />
+  </Style>
+  <!-- 分组折叠箭头：透明底，但**不能太小**——原来 20×20 + 11px 字形，
+       125% 缩放下几乎看不清，用户反馈"折叠按钮明显一些"。
+       现在给足 24×24 的点击区、13px 粗体字形，并带悬停底色。 -->
+  <Style Selector="Button.chevron">
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="3,0" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="Width" Value="24" />
+    <Setter Property="Height" Value="24" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    <!-- 折叠/展开是高频操作，给一点底色让它看起来像按钮，而不是装饰字符 -->
+    <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+  </Style>
+
+  <Style Selector="Button.chevron:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+  </Style>
+
+  <!-- 侧栏的通道 / 从站列表：选中块必须是圆角。
+       SimpleTheme 默认给的是直角色块、且贴着列表左右边缘，
+       叠在圆角面板里就是"圆角里套直角"，看着很别扭。
+       这里收紧外边距 + 圆角，同时把系统蓝换成主题暖色，和整体一致。 -->
+  <Style Selector="Border#SidebarPanel ListBoxItem">
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Margin" Value="4,1" />
+    <Setter Property="Padding" Value="6,3" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+
+  <Style Selector="Border#SidebarPanel ListBoxItem /template/ ContentPresenter">
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Padding" Value="6,3" />
+  </Style>
+
+  <Style Selector="Border#SidebarPanel ListBoxItem:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+
+  <Style Selector="Border#SidebarPanel ListBoxItem:selected /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource SelectionBrush}" />
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+
+  <!-- ══ 侧边栏：从站标签（扁平视图）══
+       状态全靠颜色说：描边 + 端点字 + 右侧胶囊共用"同一个状态深色"，
+       底色保持**透明**——铺满整行会把 ListBoxItem 的悬停/选中底色盖住，
+       选中了看着像没选中。浅底留给更小的元素（胶囊）去做提示。 -->
+  <Style Selector="Border.slaveTag">
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Padding" Value="8,5" />
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+
+  <Style Selector="Border.statePill">
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="5,1" />
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+
+  <!-- ══ 侧边栏底部：视图切换（一整条圆角按钮）══
+       配色只用主题令牌：底 PrimarySoftBrush、字 PrimarySoftTextBrush、悬停转 PrimaryBrush/OnPrimary。
+       这两组"底/字"配对在六套主题里都逐套验过 ≥4.5:1，所以两套深色下也不会糊；
+       不需要为这颗按钮新增任何颜色令牌。 -->
+  <Style Selector="Border.viewSwitchBar">
+    <Setter Property="BorderThickness" Value="0,1,0,0" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="Padding" Value="8,7" />
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+
+  <Style Selector="Button.viewSwitch">
+    <Setter Property="Height" Value="30" />
+    <Setter Property="Padding" Value="10,0" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <!-- Center 而不是 Stretch：按钮内容（图标 + 文字）是一组居中的东西。
+         Stretch 会把内容拉到满宽，内容自己的 HorizontalAlignment=Center 就失效了。 -->
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource PrimarySoftTextBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="{DynamicResource PrimarySoftBrush}" />
+  </Style>
+
+  <Style Selector="Button.viewSwitch:pointerover">
+    <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource OnPrimaryBrush}" />
+  </Style>
+
+  <Style Selector="Button.viewSwitch:pressed">
+    <Setter Property="Background" Value="{DynamicResource PrimaryPressedBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource PrimaryPressedBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource OnPrimaryBrush}" />
+  </Style>
+
+  <!-- 图标不能继承 Foreground（Path 用的是 Stroke），所以单独跟一遍 -->
+  <Style Selector="Button.viewSwitch Path">
+    <Setter Property="Stroke" Value="{DynamicResource PrimarySoftTextBrush}" />
+    <Setter Property="StrokeThickness" Value="1.8" />
+    <Setter Property="StrokeLineCap" Value="Round" />
+    <Setter Property="StrokeJoin" Value="Round" />
+  </Style>
+
+  <Style Selector="Button.viewSwitch:pointerover Path">
+    <Setter Property="Stroke" Value="{DynamicResource OnPrimaryBrush}" />
+  </Style>
+
+  <Style Selector="Button.viewSwitch:pressed Path">
+    <Setter Property="Stroke" Value="{DynamicResource OnPrimaryBrush}" />
+  </Style>
+
+  <!-- ══ 设置页：卡片式单选 ══
+       为什么用 RadioButton 而不是 Button + Classes.selected：
+       单选语义是现成的（键盘左右键、读屏、GroupName 互斥），自定义模板只换"长相"，
+       行为一行代码都不用自己写。换成一个普通按钮，就得自己维护"组内只能选一个"。
+
+       长相（参考主流设置界面的做法）：
+         · 未选：面板底色 + 1px 细边
+         · 悬停：HoverBrush 底（比细边亮一档，暗示"可点"）
+         · 选中：PrimarySoft 底 + Primary 描边 + 右上角一个勾
+       文字色**不随选中变**：底色从 Surface 换成 PrimarySoft 时，
+       TextPrimary / TextSecondary 在六套主题里都仍有足够对比度；
+       真按选中改字色，反而会在深色主题下掉对比度。 -->
+  <Style Selector="RadioButton.card">
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Top" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="CardBorder"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderLineBrush}"
+                BorderThickness="1"
+                CornerRadius="10"
+                Padding="14,11">
+          <Grid ColumnDefinitions="*,Auto">
+            <ContentPresenter Grid.Column="0"
+                              Content="{TemplateBinding Content}"
+                              ContentTemplate="{TemplateBinding ContentTemplate}" />
+            <!-- 勾在模板里而不是内容里：它属于"选中"这个状态，不属于这张卡片讲的内容 -->
+            <Path Grid.Column="1" Name="CheckMark" Data="M4 9l4 4 8-8"
+                  Stroke="{DynamicResource PrimaryBrush}"
+                  StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round"
+                  Width="11" Height="11" Stretch="Uniform"
+                  VerticalAlignment="Top" Margin="10,3,0,0" IsVisible="False" />
+          </Grid>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+
+  <Style Selector="RadioButton.card:pointerover /template/ Border#CardBorder">
+    <Setter Property="Background" Value="{DynamicResource HoverBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+  </Style>
+
+  <!-- 放在 :pointerover 之后：选中卡片在悬停时也要保持"选中"的样子 -->
+  <Style Selector="RadioButton.card:checked /template/ Border#CardBorder">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}" />
+  </Style>
+
+  <Style Selector="RadioButton.card:checked /template/ Path#CheckMark">
+    <Setter Property="IsVisible" Value="True" />
+  </Style>
+
+  <Style Selector="TextBlock.cardTitle">
+    <Setter Property="FontSize" Value="12.5" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+
+  <Style Selector="TextBlock.cardDesc">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="Margin" Value="0,3,0,0" />
+  </Style>
+
+  <!-- 分组小标题（侧边栏 / 信号表格的标签分组） -->
+  <Style Selector="TextBlock.sectionTitle">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="Margin" Value="0,0,0,8" />
+  </Style>
+
+  <!-- ══ 设置页：关于 ══
+       信息表用 SelectableTextBlock 而不是 TextBlock：设置文件路径、构建 ID 这类值
+       用户很可能要复制出去（贴到工单里），能选中是刚需，为此多做一个"复制这一行"按钮不值。 -->
+  <Style Selector="TextBlock.aboutLabel">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="Width" Value="64" />
+    <Setter Property="Margin" Value="0,4,10,4" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+  </Style>
+
+  <Style Selector="SelectableTextBlock.aboutValue">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="Margin" Value="0,3" />
+  </Style>
+
+  <!-- 更新说明的每一行：整行可点，点开才展开条目 -->
+  <Style Selector="Button.releaseHeader">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="6,8" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+
+  <Style Selector="Button.releaseHeader:pointerover">
+    <Setter Property="Background" Value="{DynamicResource HoverBrush}" />
+  </Style>
+
+  <!-- 信号区标签栏：横向标签，选中项底色 + 底部主色线 -->
+  <Style Selector="ListBox.tabbar">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Height" Value="36" />
+  </Style>
+
+  <Style Selector="ListBox.tabbar ListBoxItem">
+    <Setter Property="Padding" Value="10,0" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="Margin" Value="2,0" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+
+  <Style Selector="ListBox.tabbar ListBoxItem /template/ ContentPresenter">
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+
+  <Style Selector="ListBox.tabbar ListBoxItem:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+
+  <!-- 选中态：原来是"底色 + 顶部 2px 直角线"，线和色块都是直角，
+       和标签本身的圆角对不上，改成纯圆角色块 + 主色字重。 -->
+  <Style Selector="ListBox.tabbar ListBoxItem:selected /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+
+  <Style Selector="ListBox.tabbar ListBoxItem:selected">
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource PrimarySoftTextBrush}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <!-- ══ 点表标签的"分组方式"切换按钮 ══
+       摆在哪：点表底部标签栏的最右端，跟着标签一起走（换从站时不用满窗口找）。
+       配色：底 PrimarySoftBrush + 字 PrimarySoftTextBrush，悬停反过来用
+             PrimaryBrush + OnPrimaryBrush。这两组"底/字"配对本来就是主题自检里
+             逐套验过 ≥4.5:1 的组合，所以**各套主题（含两套深色）都不会看不见**，
+             不需要为它单独加颜色令牌，也不会出现"深色下浅底浅字"。
+       尺寸：22 高、圆角 11（胶囊），比标签(28)矮一圈，读作"附属控件"而不是又一个标签。 -->
+  <Style Selector="Button.modeToggle">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource PrimarySoftTextBrush}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Height" Value="22" />
+    <Setter Property="MinHeight" Value="22" />
+    <Setter Property="Padding" Value="9,0" />
+    <Setter Property="CornerRadius" Value="11" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+  </Style>
+
+  <Style Selector="Button.modeToggle Path">
+    <Setter Property="Stroke" Value="{DynamicResource PrimarySoftTextBrush}" />
+    <Setter Property="StrokeThickness" Value="1.7" />
+    <Setter Property="StrokeLineCap" Value="Round" />
+    <Setter Property="StrokeJoin" Value="Round" />
+  </Style>
+
+  <Style Selector="Button.modeToggle:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
+    <Setter Property="TextBlock.Foreground" Value="{DynamicResource OnPrimaryBrush}" />
+  </Style>
+
+  <Style Selector="Button.modeToggle:pointerover Path">
+    <Setter Property="Stroke" Value="{DynamicResource OnPrimaryBrush}" />
+  </Style>
+
+  <!-- 表头里的单位提示（点号下方的"10 进制"）：小一号、次要色，不抢主标题 -->
+  <Style Selector="TextBlock.headerHint">
+    <Setter Property="FontSize" Value="10" />
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="TextAlignment" Value="Center" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+  </Style>
+
+  <!-- 底部"报文监视 / 链路日志"页签：默认样式在中文字体下显得又高又大，
+       用户反馈"两个监视用的按键小一些、字体太大"，压到 12px / 28px 高。 -->
+  <Style Selector="TabControl">
+    <Setter Property="Padding" Value="0" />
+  </Style>
+
+  <Style Selector="TabControl TabItem">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="MinHeight" Value="28" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+
+  <!-- 悬停/选中都打到自绘模板的 root 上（见上方 ChipTabItem）。
+       顺序有讲究：:selected 必须排在 :pointerover 后面 —— 两者特异性相同，
+       靠后者的胜出。反过来的话，鼠标停在已经选中的页签上时底色会被悬停色盖掉，
+       页签和内容区之间立刻裂出一道灰缝，"连成一体"当场破功。 -->
+  <Style Selector="TabControl TabItem:pointerover">
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+
+  <Style Selector="TabControl TabItem:pointerover /template/ Border#root">
+    <Setter Property="Background" Value="{DynamicResource HoverBrush}" />
+  </Style>
+
+  <Style Selector="TabControl TabItem:selected">
+    <Setter Property="Foreground" Value="{DynamicResource PrimarySoftTextBrush}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <!-- 选中页签的底色必须与内容区**完全相同**，这是"页签连到内容区"的全部来历。
+       浅色主题下 SurfaceBrush 是面板白，深色主题下是面板深色，两边一起变，
+       所以换主题后接缝依旧看不出来。
+       边框改成 PrimaryBrush，就是顶上那道 2px 主题色。 -->
+  <Style Selector="TabControl TabItem:selected /template/ Border#root">
+    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}" />
+  </Style>
+
+  <!-- ══ 自绘标题栏的按钮 ══
+       钉子：未钉住=灰线，钉住=主色实心+白色图钉，"一眼看出当前是不是钉住的"。
+       三个系统按钮走 Windows 惯例：关闭按钮悬停变红。 -->
+  <Style Selector="Button.pin">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Width" Value="32" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.14" />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <Style Selector="Button.pin Path">
+    <Setter Property="Stroke" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="StrokeThickness" Value="1.6" />
+    <Setter Property="StrokeLineCap" Value="Round" />
+    <Setter Property="StrokeJoin" Value="Round" />
+    <Setter Property="Width" Value="15" />
+    <Setter Property="Height" Value="15" />
+    <Setter Property="Stretch" Value="Uniform" />
+  </Style>
+
+  <Style Selector="Button.pin:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+  </Style>
+
+  <Style Selector="Button.pin.pinned /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
+  </Style>
+
+  <Style Selector="Button.pin.pinned Path">
+    <Setter Property="Stroke" Value="{DynamicResource OnPrimaryBrush}" />
+  </Style>
+
+  <Style Selector="Button.caption">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Width" Value="38" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.12" />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <Style Selector="Button.caption Path">
+    <Setter Property="Stroke" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="StrokeThickness" Value="1.85" />
+    <Setter Property="StrokeLineCap" Value="Round" />
+    <Setter Property="StrokeJoin" Value="Round" />
+    <Setter Property="Width" Value="12" />
+    <Setter Property="Height" Value="12" />
+    <Setter Property="Stretch" Value="Uniform" />
+  </Style>
+
+  <Style Selector="Button.caption:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource HoverBrush}" />
+  </Style>
+
+  <Style Selector="Button.caption:pointerover Path">
+    <Setter Property="Stroke" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+
+  <!-- 最小化用 Rectangle 而不是 Path：一条纯水平线的包围盒高度为 0，
+       Path 的 Stretch=Uniform 会按 0 高度算缩放比，结果线被压成一个点 -->
+  <Style Selector="Button.caption Rectangle">
+    <Setter Property="Fill" Value="{DynamicResource TextSecondaryBrush}" />
+  </Style>
+
+  <Style Selector="Button.caption:pointerover Rectangle">
+    <Setter Property="Fill" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+
+  <Style Selector="Button.caption.close:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="#E81123" />
+  </Style>
+
+  <!-- 关闭按钮悬停是 Windows 惯例的红底，图标固定白色，
+       不能跟主色走——深色主题的 OnPrimary 是深色，压在红底上就看不见了 -->
+  <Style Selector="Button.caption.close:pointerover Path">
+    <Setter Property="Stroke" Value="#FFFFFF" />
+  </Style>
+
+  <!-- ══ 自绘标题栏 ══
+       双击标题栏最大化、按住拖动，由 MainWindow.OnTitleBarPointerPressed 处理。
+       底色跟工具条一致，标题栏 + 工具条是一整块"顶部区域"，底下才是内容。 -->
+  <!-- 标题栏**不加** BorderThickness。
+       原因：Border 的描边会从内容区里扣掉，底边 1px 就把 40 高的内容区变成 39，
+       里面所有子控件的垂直中心落在 19.5 而不是 20——单看一个控件看不出来，
+       整行一起看就是"内容比栏的中心高一点点"（用户反馈的"看着比较靠上"）。
+       现在分隔线改成标题栏里的一根 1px Rectangle 叠在最底下，不占布局，
+       内容区就是完整的 40，中线正好在 20。 -->
+  <Style Selector="Border.titlebar">
+    <Setter Property="Background" Value="{DynamicResource ToolbarBrush}" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+
+  <!-- 叠在标题栏底部的那根分隔线（不参与布局，所以不影响居中） -->
+  <Style Selector="Rectangle.titleDivider">
+    <Setter Property="Height" Value="1" />
+    <Setter Property="VerticalAlignment" Value="Bottom" />
+    <Setter Property="Fill" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+
+  <!-- 标题栏里的菜单：默认 Menu 自带底色和上下留白，塞进 40px 标题栏会顶出边界 -->
+  <Style Selector="Menu.titleMenu">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <!-- 主题按钮：图标 + 当前主题名 + 下拉箭头，合成一颗小胶囊。
+       用户反馈原来的"半黑半白圆环"看不懂，也不知道旁边那个名字能点；
+       现在整块就是按钮，名字直接写在按钮上，还带个 ▾ 明示可展开。 -->
+  <Style Selector="Button.themeChip">
+    <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Padding" Value="9,0" />
+    <Setter Property="Height" Value="24" />
+    <Setter Property="MinHeight" Value="24" />
+    <Setter Property="Margin" Value="0,0,8,0" />
+    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.14" />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <Style Selector="Button.themeChip Path">
+    <Setter Property="Stroke" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="StrokeThickness" Value="1.75" />
+    <Setter Property="StrokeLineCap" Value="Round" />
+    <Setter Property="StrokeJoin" Value="Round" />
+  </Style>
+
+  <Style Selector="Button.themeChip:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+    <Setter Property="TextBlock.Foreground" Value="{DynamicResource PrimarySoftTextBrush}" />
+  </Style>
+
+  <Style Selector="Button.themeChip:pointerover Path">
+    <Setter Property="Stroke" Value="{DynamicResource PrimarySoftTextBrush}" />
+  </Style>
+
+  <!-- ══ 主题选择弹窗 ══
+       原来是 ContextMenu（系统菜单的样子：方角、灰底、前面一个黑圆点），
+       现在换成自绘卡片：圆角、每项一个该主题的代表色圆点、当前项高亮并带勾。
+       弹层本身是 Popup，不参与窗口布局，所以不会挤到别的控件。 -->
+  <Style Selector="Border.themeCard">
+    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Padding" Value="6" />
+    <Setter Property="MinWidth" Value="248" />
+    <Setter Property="ClipToBounds" Value="True" />
+  </Style>
+
+  <Style Selector="Button.themeItem">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="7" />
+    <Setter Property="Padding" Value="8,0" />
+    <Setter Property="Height" Value="32" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.12" />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <Style Selector="Button.themeItem:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+  </Style>
+
+  <!-- 当前生效的那一行：浅主色底 + 主色文字，和悬停态明确区分 -->
+  <Style Selector="Button.themeItem.active">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+  </Style>
+
+  <Style Selector="Button.themeItem.active TextBlock.themeName">
+    <Setter Property="Foreground" Value="{DynamicResource PrimarySoftTextBrush}" />
+  </Style>
+
+  <!-- 代表色圆点：外圈一圈淡描边，浅色圆点（暖白那种）在浅底上也看得见 -->
+  <Style Selector="Ellipse.themeSwatch">
+    <Setter Property="Width" Value="13" />
+    <Setter Property="Height" Value="13" />
+    <Setter Property="Stroke" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="StrokeThickness" Value="1" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <Style Selector="TextBlock.themeName">
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <Style Selector="TextBlock.themeHint">
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <Style Selector="Button.themeItem Path.themeCheck">
+    <Setter Property="Stroke" Value="{DynamicResource PrimarySoftTextBrush}" />
+    <Setter Property="StrokeThickness" Value="1.9" />
+    <Setter Property="StrokeLineCap" Value="Round" />
+    <Setter Property="StrokeJoin" Value="Round" />
+    <Setter Property="Stretch" Value="Uniform" />
+    <Setter Property="Width" Value="12" />
+    <Setter Property="Height" Value="12" />
+    <Setter Property="Margin" Value="8,0,2,0" />
+  </Style>
+
+  <!-- ══ 标题栏右侧的图标按钮（GitHub / 检查更新）══
+       和三个系统按钮同尺寸同位置，但更"轻"：无描边，悬停才出浅底。 -->
+  <Style Selector="Button.titleIcon">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Width" Value="34" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.14" />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <Style Selector="Button.titleIcon:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+  </Style>
+
+  <Style Selector="Button.titleIcon Path">
+    <Setter Property="Stroke" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="StrokeThickness" Value="1.9" />
+    <Setter Property="StrokeLineCap" Value="Round" />
+    <Setter Property="StrokeJoin" Value="Round" />
+    <Setter Property="Stretch" Value="Uniform" />
+    <Setter Property="Width" Value="16" />
+    <Setter Property="Height" Value="16" />
+  </Style>
+
+  <!-- GitHub 是品牌剪影，实心画才对：不套描边，改用填充 -->
+  <Style Selector="Button.titleIcon Path.filled">
+    <Setter Property="Fill" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="Stroke" Value="{x:Null}" />
+    <Setter Property="Width" Value="17" />
+    <Setter Property="Height" Value="17" />
+  </Style>
+
+  <Style Selector="Button.titleIcon:pointerover Path">
+    <Setter Property="Stroke" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+
+  <Style Selector="Button.titleIcon:pointerover Path.filled">
+    <Setter Property="Fill" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+  <!-- 设置按钮的"当前生效"态。
+       为什么不只在悬停时变色：设置界面上没有第二处入口，用户点进去之后
+       唯一能确认"我现在在设置里"的就是标题栏这颗按钮还亮着。
+       底色用 PrimarySoft、图标用 PrimarySoftText —— 和分组切换按钮同一对令牌，
+       对比度在各套主题里都验过 ≥4.5:1。 -->
+  <Style Selector="Button.titleIcon.active /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+  </Style>
+
+  <Style Selector="Button.titleIcon.active Path">
+    <Setter Property="Stroke" Value="{DynamicResource PrimarySoftTextBrush}" />
+  </Style>
+
+  <!-- ══ 设置界面 ══ -->
+
+  <!-- 左侧标签栏：和点表页签是同一套观感（圆角色块 + 选中描主色字），
+       但方向是竖排，所以只改外边距与高度。 -->
+  <Style Selector="ListBox.settingsNav">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="6,4" />
+  </Style>
+
+  <Style Selector="ListBox.settingsNav ListBoxItem">
+    <Setter Property="Padding" Value="10,0" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Height" Value="32" />
+    <Setter Property="Margin" Value="0,1" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="FontSize" Value="12.5" />
+  </Style>
+
+  <Style Selector="ListBox.settingsNav ListBoxItem /template/ ContentPresenter">
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+
+  <Style Selector="ListBox.settingsNav ListBoxItem:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+  </Style>
+
+  <!-- 选中态必须排在 :pointerover 之后，否则选中项一悬停就退回浅底 -->
+  <Style Selector="ListBox.settingsNav ListBoxItem:selected /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+  </Style>
+
+  <Style Selector="ListBox.settingsNav ListBoxItem:selected">
+    <Setter Property="Foreground" Value="{DynamicResource PrimarySoftTextBrush}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <!-- ══ 设置左栏底部那一格「关于」══
+       长得跟上面的导航项一模一样，这样"它也是一个页面"这件事不用解释；
+       但它是 Button 而不是 ListBoxItem —— 它不在 Pages 集合里（见 SettingsViewModel），
+       放进同一个 ListBox 就得为"集合里混着一个不该出现在顶部的项"写特例。 -->
+  <Style Selector="Border.aboutNavBar">
+    <Setter Property="BorderThickness" Value="0,1,0,0" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="Padding" Value="6,6,6,8" />
+  </Style>
+
+  <Style Selector="Button.navItem">
+    <Setter Property="Height" Value="32" />
+    <Setter Property="Padding" Value="10,0" />
+    <Setter Property="Margin" Value="0,1" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    <Setter Property="FontSize" Value="12.5" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+
+  <Style Selector="Button.navItem:pointerover">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+  </Style>
+
+  <Style Selector="Button.navItem.active">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource PrimarySoftTextBrush}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <!-- 设置页里的次级按钮：比工具条轻一档，够用但不成排成列地抢注意力 -->
+  <Style Selector="Button.subtle">
+    <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="Padding" Value="11,0" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.14" />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <Style Selector="Button.subtle Path">
+    <Setter Property="Stroke" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="StrokeThickness" Value="1.7" />
+    <Setter Property="StrokeLineCap" Value="Round" />
+    <Setter Property="StrokeJoin" Value="Round" />
+  </Style>
+
+  <Style Selector="Button.subtle:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+    <Setter Property="TextBlock.Foreground" Value="{DynamicResource PrimarySoftTextBrush}" />
+  </Style>
+
+  <Style Selector="Button.subtle:pointerover Path">
+    <Setter Property="Stroke" Value="{DynamicResource PrimarySoftTextBrush}" />
+  </Style>
+
+  <Style Selector="Button.subtle.danger:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource DangerSoftBrush}" />
+    <Setter Property="TextBlock.Foreground" Value="{DynamicResource DangerTextBrush}" />
+  </Style>
+
+  <Style Selector="Button.subtle.danger:pointerover Path">
+    <Setter Property="Stroke" Value="{DynamicResource DangerTextBrush}" />
+  </Style>
+
+  <!-- 设置里的表格：行高比点表紧一点（这里是配置，不是要长时间盯着的数据） -->
+  <Style Selector="DataGrid.settingsGrid">
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+
+  <!-- ══ 状态栏里的侧栏开关 ══
+       用户说"看着不太明显、看不出来是个按钮"。原来只有一根透明底的细箭头，
+       现在给一圈浅底 + 描边 + 圆角，落在状态栏里就是个明确的按钮；
+       悬停主色浅底、按下主色。尺寸 22×22，仍然只占状态栏那一行。 -->
+  <Style Selector="Button.statusToggle">
+    <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Width" Value="22" />
+    <Setter Property="Height" Value="22" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="Margin" Value="0,0,4,0" />
+    <Setter Property="CornerRadius" Value="5" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.12" />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <Style Selector="Button.statusToggle:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+  </Style>
+
+  <Style Selector="Button.statusToggle:pointerover Path">
+    <Setter Property="Stroke" Value="{DynamicResource PrimarySoftTextBrush}" />
+  </Style>
+
+  <!-- 运行健康度胶囊：底色/文字色/圆点色都由 ViewModel 按通道状态绑上来 -->
+  <Style Selector="Border.healthPill">
+    <Setter Property="CornerRadius" Value="9" />
+    <Setter Property="Padding" Value="8,1" />
+    <Setter Property="Margin" Value="6,0,0,0" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <Style Selector="TextBlock.statusText">
+    <Setter Property="FontSize" Value="11.5" />
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+
+  <!-- 软件名：状态栏最右边的小字，存在感压低，但一眼能确认"这是哪个软件" -->
+  <Style Selector="TextBlock.statusBrand">
+    <Setter Property="FontSize" Value="10.5" />
+    <Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}" />
+  </Style>
+
+
+  <!-- ══ 侧栏分组标题条（通道 / 从站）══
+       整条给一层底色，把"折叠箭头 + 标题 + 计数 + 操作按钮"圈成同一个视觉单元。
+       之前箭头在最左、新建按钮在最右，中间一大片空白，看起来像是两件不相关的事
+       （用户原话："折叠按钮好像和后面的功能没有关系"）。
+       圆角只给上边：通道条在面板顶部、从站条在中间，上圆下直更贴合分隔关系。 -->
+  <Style Selector="Border.groupHeader">
+    <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="BorderThickness" Value="0,0,0,1" />
+    <Setter Property="CornerRadius" Value="7,7,0,0" />
+    <Setter Property="Padding" Value="4,3" />
+  </Style>
+
+  <!-- 标题条里的文字不再自带 10px 内边距，否则和箭头之间空出 10px 缝，
+       看起来又"断开"了 -->
+  <Style Selector="Border.groupHeader TextBlock.panelTitle">
+    <Setter Property="Padding" Value="6,0" />
+  </Style>
+
+  <!-- ══ 关于窗口的功能清单 ══
+       用户要求"不用写这么多文字，大概写有哪些功能就行"。
+       现在是 6 条功能点、两列三行：标题一行（主色区分），说明一行（次要色、可换行）。
+       条目本身不加底色——背景已经是从主题算出来的渐变，再叠卡片会脏。 -->
+  <Style Selector="StackPanel.aboutItem">
+    <Setter Property="Margin" Value="0,0,16,12" />
+  </Style>
+
+  <Style Selector="TextBlock.aboutTitle">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <Style Selector="TextBlock.aboutDesc">
+    <Setter Property="FontSize" Value="11.5" />
+    <Setter Property="Margin" Value="0,2,0,0" />
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+
+</Styles>

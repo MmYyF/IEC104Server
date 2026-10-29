@@ -1,0 +1,86 @@
+﻿<views:DialogWindow xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:IEC104.App.Views"
+        xmlns:infra="clr-namespace:IEC104.App.Infrastructure"
+        x:Class="IEC104.App.Views.AutoChangeWindow"
+        Title="缓变配置（自动变化）"
+        Icon="/Assets/app.ico"
+        Width="880" Height="600"
+        WindowStartupLocation="CenterOwner">
+
+  <Window.Resources>
+    <infra:ChangePatternNameConverter x:Key="PatternName" />
+  </Window.Resources>
+
+  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="14">
+
+    <!-- 总开关 + 节拍 -->
+    <Border Grid.Row="0" Classes="panel" Padding="10,8">
+      <StackPanel Orientation="Horizontal" Spacing="14">
+        <CheckBox Content="启用自动变化" IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                  VerticalAlignment="Center" />
+        <TextBlock Text="变化间隔(ms)" VerticalAlignment="Center" />
+        <NumericUpDown Value="{Binding IntervalMs, Mode=TwoWay}" Width="140"
+                       Minimum="100" Maximum="60000" Increment="100" FormatString="0"
+                       VerticalAlignment="Center" />
+        <TextBlock Text="间隔越小，上送越密；104 通道 k=12 时建议不低于 1000 ms。"
+                   Classes="hint" VerticalAlignment="Center" />
+      </StackPanel>
+    </Border>
+
+    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,10,0,6">
+      <Button Content="套用到同类型点位" Command="{Binding ApplySameTypeCommand}" />
+      <Button Content="全部关闭变化" Command="{Binding DisableAllCommand}" />
+      <TextBlock Text="提示：双击“模式/幅度”单元格可直接编辑。" Classes="hint"
+                 VerticalAlignment="Center" Margin="8,0,0,0" />
+    </StackPanel>
+
+    <Border Grid.Row="2" Classes="panel">
+      <DataGrid ItemsSource="{Binding Points}"
+                SelectedItem="{Binding SelectedPoint, Mode=TwoWay}"
+                AutoGenerateColumns="False" CanUserReorderColumns="True">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="点号" Binding="{Binding ObjectAddress}" Width="80" IsReadOnly="True" />
+          <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="*" IsReadOnly="True" />
+          <DataGridTextColumn Header="ASDU 类型" Binding="{Binding TypeCode}" Width="120" IsReadOnly="True" />
+
+          <DataGridTemplateColumn Header="变化模式" Width="130">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate>
+                <ComboBox ItemsSource="{Binding AvailablePatterns}"
+                          SelectedItem="{Binding ChangePattern, Mode=TwoWay}"
+                          Background="Transparent" BorderThickness="0" Padding="0"
+                          HorizontalAlignment="Stretch">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Text="{Binding Converter={StaticResource PatternName}}" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+
+          <DataGridTemplateColumn Header="幅度" Width="140">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate>
+                <NumericUpDown Value="{Binding ChangeAmplitude, Mode=TwoWay}"
+                               Minimum="0" Maximum="1000000" Increment="1"
+                               FormatString="0.###" ShowButtonSpinner="False"
+                               Padding="6,0" BorderThickness="0" Background="Transparent" />
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+
+          <DataGridTextColumn Header="当前值" Binding="{Binding ValueText}" Width="110" IsReadOnly="True" />
+          <DataGridTextColumn Header="变化时间" Binding="{Binding LastChangedAtText}" Width="150" IsReadOnly="True" />
+        </DataGrid.Columns>
+      </DataGrid>
+    </Border>
+
+    <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,12,0,0">
+      <TextBlock Grid.Column="0" Text="{Binding StatusText}" Classes="hint" VerticalAlignment="Center" />
+      <Button Grid.Column="1" Content="关闭" Width="88" Click="OnCloseClick" />
+    </Grid>
+  </Grid>
+</views:DialogWindow>

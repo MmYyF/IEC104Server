@@ -1,0 +1,104 @@
+﻿<views:DialogWindow xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:IEC104.App.ViewModels"
+        xmlns:views="using:IEC104.App.Views"
+        x:Class="IEC104.App.Views.ConnectionWindow"
+        Title="通道配置"
+        Icon="/Assets/app.ico"
+        Width="580" Height="740"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False">
+
+  <Grid RowDefinitions="*,Auto" Margin="16">
+    <ScrollViewer Grid.Row="0">
+      <StackPanel Spacing="10">
+
+        <TextBlock Text="基本信息" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}" />
+        <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="名称" VerticalAlignment="Center" />
+          <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name, Mode=TwoWay}" Margin="0,4" />
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="规约类型" VerticalAlignment="Center" />
+          <ComboBox Grid.Row="1" Grid.Column="1" SelectedIndex="{Binding ProtocolIndex, Mode=TwoWay}" Margin="0,4">
+            <ComboBoxItem Content="IEC 60870-5-104（TCP）" />
+            <ComboBoxItem Content="IEC 60870-5-101（串口）" />
+          </ComboBox>
+        </Grid>
+
+        <Separator />
+
+        <!-- TCP 参数：仅 104 显示 -->
+        <StackPanel Spacing="10" IsVisible="{Binding IsTcp}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <TextBlock Text="TCP 参数" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}"
+                       VerticalAlignment="Center" />
+            <views:HintIcon Tip="监听 IP 填 0.0.0.0 表示所有网卡（默认）；只想在调度网卡上开 104 时，点下面“本机地址”里任一地址填入。104 标准端口为 2404。" />
+          </StackPanel>
+          <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="监听 IP" VerticalAlignment="Center" />
+            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding BindAddress, Mode=TwoWay}"
+                     Watermark="0.0.0.0（监听全部网卡）" Margin="0,4" />
+
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="本机地址" VerticalAlignment="Center" />
+            <!-- 单行横向滚动：本机网卡多的时候（VPN、虚拟网卡、多网段）
+                 竖着排会把窗口撑到出滚动条，横着滚一行不占额外高度。
+                 高度 32 = 标签 22 + 横向滚动条，再小标签会被压掉一截 -->
+            <ScrollViewer Grid.Row="1" Grid.Column="1" Height="32" Margin="0,0,0,4"
+                          VerticalScrollBarVisibility="Disabled"
+                          HorizontalScrollBarVisibility="Auto">
+              <ItemsControl ItemsSource="{Binding AvailableAddresses}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Button Content="{Binding}" Classes="chip" Margin="0,0,6,0"
+                            Click="OnUseAddressClick" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="监听端口" VerticalAlignment="Center" />
+            <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding Port, Mode=TwoWay}"
+                           Minimum="1" Maximum="65535" Increment="1" FormatString="0" Margin="0,4" />
+          </Grid>
+        </StackPanel>
+
+        <!-- 串口参数：仅 101 显示 -->
+        <StackPanel Spacing="10" IsVisible="{Binding IsSerialPort}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <TextBlock Text="串口参数" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}"
+                       VerticalAlignment="Center" />
+            <views:HintIcon Tip="101 走串口（FT1.2 帧格式）。数据位 8、停止位 1、无校验为国内最常见配置。串口是独占资源，同一串口不能同时被两条通道占用。" />
+          </StackPanel>
+          <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="串口名" VerticalAlignment="Center" />
+            <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding AvailablePorts}"
+                      SelectedItem="{Binding SerialPortName, Mode=TwoWay}" Margin="0,4" />
+
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="波特率" VerticalAlignment="Center" />
+            <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding AvailableBaudRates}"
+                      SelectedItem="{Binding BaudRate, Mode=TwoWay}" Margin="0,4" />
+          </Grid>
+        </StackPanel>
+
+        <Separator />
+
+        <!-- 链路参数 + 报文长度：与"建从站时新建通道"、"双击从站标签"、
+             "批量建从站"共用同一个面板与同一份校验，不许任何一处少一项 -->
+        <views:LinkParametersPanel x:Name="LinkPanel" DataContext="{Binding Link}" />
+
+        <TextBlock x:Name="ErrorText" Foreground="{DynamicResource DangerBrush}" TextWrapping="Wrap" />
+
+      </StackPanel>
+    </ScrollViewer>
+
+    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+      <Button Content="取消" Width="88" Click="OnCancelClick" />
+      <Button Content="确定" Width="88" Classes="primary" Click="OnOkClick" />
+    </StackPanel>
+  </Grid>
+</views:DialogWindow>

@@ -1,0 +1,181 @@
+﻿<views:DialogWindow xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:IEC104.App.Views"
+        x:Class="IEC104.App.Views.SlaveWindow"
+        Title="从站配置"
+        Icon="/Assets/app.ico"
+        Width="470" SizeToContent="Height" MaxHeight="880"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False">
+
+  <Grid RowDefinitions="*,Auto" Margin="16">
+    <!-- 通道参数一展开，窗口会比屏幕还高（SizeToContent=Height 本来没有上限）。
+         这里加 MaxHeight + ScrollViewer：内容不超过 780 就照旧自适应，
+         超了就出滚动条，而不是把"确定"按钮顶到屏幕外面去。 -->
+    <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Spacing="12">
+      <TextBlock Text="从站信息" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}" />
+
+      <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto">
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="从站名称" VerticalAlignment="Center" />
+        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name, Mode=TwoWay}" Margin="0,4" />
+
+        <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Spacing="4"
+                    VerticalAlignment="Center">
+          <TextBlock Text="公共地址" VerticalAlignment="Center" />
+          <views:HintIcon Tip="公共地址（Common Address，即站地址）用于在一条连接下区分不同装置，主站按该地址路由报文，同一通道内不可重复。1 字节宽度时只能到 255，2 字节可到 65535。" />
+        </StackPanel>
+        <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding CommonAddress, Mode=TwoWay}"
+                       Minimum="1" Maximum="65535" Increment="1" FormatString="0" Margin="0,4" />
+      </Grid>
+
+      <!-- 所属通道的监听信息：只在"从站列表"视图里双击标签时出现。
+           那儿通道不是用户能看见的对象——双击一台装置，想改的就是它的 IP，
+           不该逼他先去另一棵树里找到通道、右键"编辑通道参数"、再回来。 -->
+      <StackPanel Spacing="8" IsVisible="{Binding CanEditChannel}">
+        <Border Height="1" Background="{DynamicResource BorderLineBrush}" Margin="0,2" />
+
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="监听信息" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}" />
+          <TextBlock Text="{Binding OwnerChannelName, StringFormat='通道 {0}'}" Classes="hint"
+                     VerticalAlignment="Center" />
+        </StackPanel>
+
+        <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="监听 IP" VerticalAlignment="Center" />
+          <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding OwnerBindAddress, Mode=TwoWay}"
+                   Watermark="0.0.0.0（全部网卡）" Margin="0,3" />
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="监听端口" VerticalAlignment="Center" />
+          <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding OwnerPort, Mode=TwoWay}"
+                         Minimum="1" Maximum="65535" Increment="1" FormatString="0" Margin="0,3" />
+        </Grid>
+
+        <ScrollViewer Height="32" VerticalScrollBarVisibility="Disabled"
+                      HorizontalScrollBarVisibility="Auto">
+          <ItemsControl ItemsSource="{Binding OwnerAddresses}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Button Content="{Binding}" Classes="chip" Margin="0,0,6,0"
+                        Click="OnUseOwnerAddressClick" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+
+        <!-- 通道正在跑的时候改端点必须停一下才生效，这句得说出来，
+             否则用户改完发现主站连不上会以为是填错了 -->
+        <TextBlock Classes="hint" TextWrapping="Wrap" IsVisible="{Binding OwnerChannelIsOpen}"
+                   Text="这条通道正在监听：端点（IP / 端口）要停止后再启动才按新值绑定。" />
+
+        <!-- 双击标签就能直接改这条通道的链路参数与报文长度。
+             用户心里的"这台装置"本来就含"挂哪个口、按什么宽度收发"，
+             不让他在同一处改完，等于逼他记住一次协议分层。 -->
+        <Border Height="1" Background="{DynamicResource BorderLineBrush}" Margin="0,2" />
+        <views:LinkParametersPanel x:Name="OwnerLinkPanel" DataContext="{Binding OwnerChannelLink}" />
+      </StackPanel>
+
+      <!-- 归属通道：仅新建从站时显示。编辑已有从站不改通道（改通道等于搬家） -->
+      <StackPanel Spacing="8" IsVisible="{Binding IsCreateMode}">
+        <Border Height="1" Background="{DynamicResource BorderLineBrush}" Margin="0,2" />
+        <TextBlock Text="归属通道" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}" />
+
+        <RadioButton GroupName="ChannelMode" Content="用已有通道"
+                     IsChecked="{Binding IsExistingChannelMode, Mode=TwoWay}" />
+        <ComboBox ItemsSource="{Binding Connections}"
+                  SelectedItem="{Binding SelectedConnection, Mode=TwoWay}"
+                  IsEnabled="{Binding IsExistingChannelMode}"
+                  HorizontalAlignment="Stretch" Margin="20,0,0,0">
+          <ComboBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding DisplayText}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <RadioButton GroupName="ChannelMode" Content="新建通道（填 IP 即可，不用先建通道）"
+                       IsChecked="{Binding IsNewChannelMode, Mode=TwoWay}" />
+          <views:HintIcon Tip="新建通道只创建配置，不会自动开始监听 —— 建好后在通道上点“启动”才开始接收主站连接。选 101 时改用串口参数，串口为独占资源，同一串口不能建两条通道。" />
+        </StackPanel>
+
+        <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto"
+              IsEnabled="{Binding IsNewChannelMode}" Margin="20,0,0,0">
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="通信规约" VerticalAlignment="Center" />
+          <ComboBox Grid.Row="0" Grid.Column="1" x:Name="NewChannelProtocolBox"
+                    SelectedIndex="{Binding NewChannelProtocolIndex, Mode=TwoWay}" Margin="0,3">
+            <ComboBoxItem Content="IEC 60870-5-104（TCP）" />
+            <ComboBoxItem Content="IEC 60870-5-101（串口）" />
+          </ComboBox>
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="通道名称" VerticalAlignment="Center" />
+          <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding NewChannelName, Mode=TwoWay}" Margin="0,3" />
+        </Grid>
+
+        <!-- TCP 端点：104 才需要 -->
+        <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto"
+              IsEnabled="{Binding IsNewChannelMode}" IsVisible="{Binding NewChannelIsTcp}"
+              Margin="20,0,0,0">
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="监听 IP" VerticalAlignment="Center" />
+          <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding NewBindAddress, Mode=TwoWay}"
+                   Watermark="0.0.0.0（全部网卡）" Margin="0,3" />
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="监听端口" VerticalAlignment="Center" />
+          <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding NewPort, Mode=TwoWay}"
+                         Minimum="1" Maximum="65535" Increment="1" FormatString="0" Margin="0,3" />
+        </Grid>
+
+        <!-- 串口参数：101 才需要 -->
+        <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto"
+              IsEnabled="{Binding IsNewChannelMode}" IsVisible="{Binding NewChannelIsSerial}"
+              Margin="20,0,0,0">
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="串口名" VerticalAlignment="Center" />
+          <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding AvailableSerialPorts}"
+                    SelectedItem="{Binding NewSerialPortName, Mode=TwoWay}" Margin="0,3" />
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="波特率" VerticalAlignment="Center" />
+          <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding AvailableBaudRates}"
+                    SelectedItem="{Binding NewBaudRate, Mode=TwoWay}" Margin="0,3" />
+        </Grid>
+
+        <ScrollViewer Height="32" IsVisible="{Binding ShowNewChannelTcp}"
+                      VerticalScrollBarVisibility="Disabled"
+                      HorizontalScrollBarVisibility="Auto" Margin="20,0,0,0">
+          <ItemsControl ItemsSource="{Binding AvailableAddresses}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Button Content="{Binding}" Classes="chip" Margin="0,0,6,0" Click="OnUseAddressClick" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+
+        <!-- 新建通道时的链路参数与报文长度：与"单独建通道"可配的内容完全一致 -->
+        <Border Height="1" Background="{DynamicResource BorderLineBrush}"
+                Margin="20,2,0,0" IsVisible="{Binding IsNewChannelMode}" />
+        <views:LinkParametersPanel x:Name="NewChannelLinkPanel" Margin="20,0,0,0"
+                                   IsVisible="{Binding IsNewChannelMode}"
+                                   DataContext="{Binding NewChannelLink}" />
+      </StackPanel>
+
+      <TextBlock x:Name="ErrorText" Foreground="{DynamicResource DangerBrush}" TextWrapping="Wrap" />
+    </StackPanel>
+    </ScrollViewer>
+
+    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+      <Button Content="取消" Width="88" Click="OnCancelClick" />
+      <Button Content="确定" Width="88" Classes="primary" Click="OnOkClick" />
+    </StackPanel>
+  </Grid>
+</views:DialogWindow>

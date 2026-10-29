@@ -1,0 +1,102 @@
+﻿<views:DialogWindow xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:IEC104.App.Views"
+        x:Class="IEC104.App.Views.TrafficWindow"
+        x:Name="TrafficRoot"
+        Title="通信报文监视"
+        Icon="/Assets/app.ico"
+        Width="1060" Height="640"
+        WindowStartupLocation="CenterOwner"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        ExtendClientAreaTitleBarHeightHint="44">
+
+  <!--
+    自绘标题栏。
+    为什么不用系统标题栏：置顶开关要在标题栏里做成"钉子"，
+    系统标题栏里插不进自定义按钮，只能整条重画。
+    代价是最小化/最大化/关闭要自己接，拖动要自己调 BeginMoveDrag。
+  -->
+  <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
+
+    <!-- ══ 标题栏 ══ -->
+    <Border Grid.Row="0" x:Name="TitleBar" Height="44"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderLineBrush}" BorderThickness="0,0,0,1"
+            PointerPressed="OnTitleBarPointerPressed">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8"
+                    Margin="14,0,0,0" VerticalAlignment="Center">
+          <!-- 标题前的软件图标：原来这里是个纯色小方块（当时为了省一张图），
+               有了统一图标以后换成真的 app.png，和其它窗口/任务栏对得上 -->
+          <Image Source="/Assets/app.png" Width="17" Height="17" VerticalAlignment="Center" />
+          <TextBlock Text="通信报文监视" FontWeight="SemiBold" FontSize="12.5"
+                     VerticalAlignment="Center" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2"
+                    Margin="0,0,8,0" VerticalAlignment="Center">
+
+          <!-- 钉子：钉住 = 置顶，再点一次取消。状态用主色高亮，一眼看得出当前是不是钉住的 -->
+          <Button x:Name="PinButton" Classes="pin" Click="OnPinClick" ToolTip.Tip="置顶窗口">
+            <Path Data="{StaticResource IconPin}" Classes="pinIcon" />
+          </Button>
+
+          <Button Classes="caption" Click="OnMinimizeClick" ToolTip.Tip="最小化">
+            <Rectangle Width="10" Height="1.4" RadiusX="0.7" RadiusY="0.7" />
+          </Button>
+          <Button Classes="caption" Click="OnMaximizeClick" ToolTip.Tip="最大化 / 还原">
+            <Path Data="M5.5 5.5h13v13h-13z" />
+          </Button>
+          <Button Classes="caption close" Click="OnCloseClick" ToolTip.Tip="关闭">
+            <Path Data="M6 6l12 12 M18 6L6 18" />
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- ══ 过滤条 ══ -->
+    <Border Grid.Row="1" Classes="panel" Padding="10,8" Margin="12,10,12,0">
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <TextBlock Text="方向" VerticalAlignment="Center" />
+        <ComboBox SelectedIndex="{Binding DirectionIndex, Mode=TwoWay}" Width="110"
+                  VerticalAlignment="Center">
+          <ComboBoxItem Content="全部" />
+          <ComboBoxItem Content="接收（主站→从站）" />
+          <ComboBoxItem Content="发送（从站→主站）" />
+        </ComboBox>
+
+        <TextBlock Text="关键字" VerticalAlignment="Center" Margin="8,0,0,0" />
+        <TextBox Text="{Binding Keyword, Mode=TwoWay}" Watermark="类型 / 名称 / 原因 / 公共地址 / 报文十六进制"
+                 Width="360" VerticalAlignment="Center" />
+
+        <TextBlock Text="{Binding CountText}" Classes="hint" VerticalAlignment="Center" />
+        <Button Content="清空" Width="76" Click="OnClearClick" />
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Row="2" Classes="panel" Margin="12,10,12,0">
+      <DataGrid ItemsSource="{Binding Records}"
+                SelectedItem="{Binding SelectedRecord, Mode=TwoWay}"
+                AutoGenerateColumns="False" IsReadOnly="True"
+                CanUserReorderColumns="True">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="时间" Binding="{Binding TimeText}" Width="110" />
+          <DataGridTextColumn Header="方向" Binding="{Binding Direction}" Width="60" />
+          <DataGridTextColumn Header="类型" Binding="{Binding TypeCode}" Width="120" />
+          <DataGridTextColumn Header="名称" Binding="{Binding TypeName}" Width="170" />
+          <DataGridTextColumn Header="传送原因" Binding="{Binding CauseText}" Width="140" />
+          <DataGridTextColumn Header="公共地址" Binding="{Binding CommonAddress}" Width="85" />
+          <DataGridTextColumn Header="信息对象" Binding="{Binding ObjectSummary}" Width="*" />
+        </DataGrid.Columns>
+      </DataGrid>
+    </Border>
+
+    <TextBlock Grid.Row="3" Text="选中报文的原始字节" FontWeight="SemiBold" Margin="14,10,0,4" />
+    <Border Grid.Row="4" Classes="panel" Padding="8" MinHeight="56" Margin="12,0,12,12">
+      <SelectableTextBlock Text="{Binding SelectedHex}" TextWrapping="Wrap"
+                           FontFamily="Consolas, monospace" FontSize="12" />
+    </Border>
+  </Grid>
+</views:DialogWindow>

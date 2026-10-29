@@ -1,0 +1,1491 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ctl="using:IEC104.App.Controls"
+        xmlns:vm="using:IEC104.App.ViewModels"
+        x:Class="IEC104.App.Views.MainWindow"
+        Title="IEC104-Server"
+        Icon="/Assets/app.ico"
+        Width="1224" Height="701"
+        MinWidth="980" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        ExtendClientAreaTitleBarHeightHint="46"
+        Topmost="{Binding AlwaysOnTop}">
+
+  <!--
+    用 Grid 显式分行（标题栏 / 菜单 / 工具条 / 主体* / 状态栏），而不是 DockPanel：
+    DockPanel 的 LastChildFill 在某些尺寸下会让主体溢出、把状态栏顶出可视区，
+    Grid 的 * 行能保证状态栏固定占位、主体自己缩放。
+
+    为什么改成自绘标题栏：主题切换按钮要放在系统标题栏的位置上，
+    系统标题栏没地方塞自定义控件，只能 ExtendClientArea + NoChrome 自绘。
+    代价是三个系统按钮要自己实现（拖动、双击最大化、最小化/最大化/关闭）。
+
+    第一行高度 40 → 46：用户反馈"图标和按钮都比较靠上"。除了最大化裁剪
+    （见 code-behind 的 ApplyMaximizedInset），40 本身也偏挤——同一行里塞了
+    18px 图标、16px 菜单图标、28px 系统按钮，上下各只余 6px，看着就是"贴着头"。
+    加到 46 后上下各余 9px，同样的内容摆进去就松开了。
+  -->
+  <Grid x:Name="RootLayout" RowDefinitions="46,Auto,*,Auto">
+
+    <!-- 为什么菜单也塞进标题栏这一行：
+         原来"标题栏 + 菜单"两行占掉 64px，而标题栏里其实只放了
+         一个小图标加一行软件名，右边一大片是空的。把菜单并进来以后，
+         省下整整一行给数据区，软件名挪去状态栏最右边。
+         拖动标题栏时要避开菜单和按钮，见 OnTitleBarPointerPressed 的白名单。 -->
+    <Border Grid.Row="0" Classes="titlebar" x:Name="TitleBar" PointerPressed="OnTitleBarPointerPressed">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+
+        <!-- 标题栏左侧的小标记：用新的 app.png（与 exe 图标同一张），
+             尺寸固定 18、在整行里靠 VerticalAlignment=Center 居中。
+             图标本身画的是圆角方块，墨迹上下会留一点边，
+             所以自检里量的是控件中心（布局中心），不是像素墨迹。 -->
+        <Image Grid.Column="0" x:Name="TitleLogo" Source="/Assets/app.png" Width="18" Height="18"
+               Margin="12,0,2,0" VerticalAlignment="Center" IsHitTestVisible="False" />
+
+        <Menu Grid.Column="1" Classes="titleMenu" x:Name="TitleMenu" VerticalAlignment="Center">
+          <!-- 顶级项与子项都带线条图标：顶级项用主色（在浅底上一眼能落位），
+               子项用次要色（不跟文字抢注意力）。
+               图标是 24×24 坐标系的描边几何，由 Controls/MenuGlyph 统一按固定画布缩放
+               （不用 Path 的 Stretch=Uniform：那是按各自墨迹撑满，粗细会不一致），
+               描边与配色见 AppTheme.axaml 的 MenuGlyph.menuIcon*。 -->
+          <MenuItem Header="文件(_F)">
+            <MenuItem.Icon>
+              <ctl:MenuGlyph Classes="menuIconTop" Data="{StaticResource IconFile}" />
+            </MenuItem.Icon>
+            <MenuItem Header="新建通道" Command="{Binding CreateConnectionCommand}">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconConnection}" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="删除当前通道" Command="{Binding DeleteConnectionCommand}">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconDelete}" /></MenuItem.Icon>
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="打开工作区…" Click="OnOpenWorkspaceClick">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconFolderOpen}" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="保存工作区…" Click="OnSaveWorkspaceClick">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconSave}" /></MenuItem.Icon>
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="导出当前点表为 CSV…" Command="{Binding ExportPointsCommand}">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconExport}" /></MenuItem.Icon>
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="退出" Click="OnExitClick">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconExit}" /></MenuItem.Icon>
+            </MenuItem>
+          </MenuItem>
+
+          <MenuItem Header="从站(_S)">
+            <MenuItem.Icon>
+              <ctl:MenuGlyph Classes="menuIconTop" Data="{StaticResource IconServer}" />
+            </MenuItem.Icon>
+            <MenuItem Header="新建从站" Command="{Binding CreateSlaveCommand}">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconServer}" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="批量创建从站（IP 递增 / 按步长）…" Command="{Binding BatchCreateSlaveCommand}">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconBatchCreate}" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="编辑从站" Command="{Binding EditSlaveCommand}">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconEdit}" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="复制从站" Command="{Binding CopySlaveCommand}">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconCopy}" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="删除从站" Command="{Binding DeleteSlaveCommand}">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconDelete}" /></MenuItem.Icon>
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="初始化数据（批量生成点表）…" Click="OnInitDataClick">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconDatabase}" /></MenuItem.Icon>
+            </MenuItem>
+          </MenuItem>
+
+          <MenuItem Header="通道(_C)">
+            <MenuItem.Icon>
+              <ctl:MenuGlyph Classes="menuIconTop" Data="{StaticResource IconConnection}" />
+            </MenuItem.Icon>
+            <MenuItem Header="启动 / 停止当前通道" Command="{Binding OpenConnectionCommand}">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconPlay}" /></MenuItem.Icon>
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="全部启动" Command="{Binding OpenAllCommand}">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconPlayAll}" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="全部停止" Command="{Binding CloseAllCommand}">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconStopAll}" /></MenuItem.Icon>
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="编辑通道参数" Command="{Binding EditConnectionCommand}">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconEdit}" /></MenuItem.Icon>
+            </MenuItem>
+          </MenuItem>
+
+          <MenuItem Header="信息对象(_P)">
+            <MenuItem.Icon>
+              <ctl:MenuGlyph Classes="menuIconTop" Data="{StaticResource IconPoints}" />
+            </MenuItem.Icon>
+            <MenuItem Header="新增信息对象" Command="{Binding AddPointCommand}">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconAddPoint}" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="修改当前信息点" Command="{Binding EditPointCommand}">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconEdit}" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="删除信息对象" Command="{Binding DeletePointCommand}">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconDelete}" /></MenuItem.Icon>
+            </MenuItem>
+          </MenuItem>
+
+          <MenuItem Header="工具(_T)">
+            <MenuItem.Icon>
+              <ctl:MenuGlyph Classes="menuIconTop" Data="{StaticResource IconTool}" />
+            </MenuItem.Icon>
+            <MenuItem Header="批量变化数据点…" Click="OnBatchChangeClick">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconBatch}" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="缓变配置（逐点自动变化）…" Click="OnAutoChangeClick">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconWave}" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="批量新增数据点（初始化数据）…" Click="OnInitDataClick">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconDatabase}" /></MenuItem.Icon>
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="IEC 104 报文解析" Click="OnFrame104Click">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconParse}" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="IEC 101 报文解析" Click="OnFrame101Click">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconParse}" /></MenuItem.Icon>
+            </MenuItem>
+            <Separator />
+            <!-- 1.9.9：实时曲线与通信报文监视挪进「工具」菜单。
+                 这两个是"打开一个看数据的窗口"，和上面两条"解析一段报文"同属
+                 "把数据拿到眼前看"，放在同一条链上是连贯的；工具栏那边只保留
+                 报文监视一颗（工具条宽度有限，曲线进去会挤掉改点位的按钮）。 -->
+            <MenuItem Header="实时曲线…" Click="OnRealtimeChartClick">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconChart}" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="通信报文监视…" Click="OnTrafficWindowClick">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconTraffic}" /></MenuItem.Icon>
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="冗余校验计算" Click="OnRedundancyClick">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconShieldCheck}" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="字符串编解码" Click="OnStringCodecClick">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconCodec}" /></MenuItem.Icon>
+            </MenuItem>
+          </MenuItem>
+
+          <!-- ══ 「视图」整条已删除（1.9.9）══
+               用户要求"把这个视图一栏直接取掉不要在这里展示了"。
+               删之前先确认原来那三项都另有入口，不能把功能一起带走：
+                 · 窗口置顶     → 标题栏设置按钮后面的钉子（1.9.8 加的，比菜单还快一层）
+                 · 底部监视面板 → 面板自己右上角的收起/展开按钮
+                 · 点表分组方式 → 点表右下角的「电力大类 / ASDU 类型」按钮
+               也就是说这一栏的三项全是"第二个入口"，删掉不丢功能。
+               顶级菜单因此从 6 项回到 5 项（文件 / 从站 / 通道 / 信息对象 / 工具）。 -->
+        </Menu>
+
+        <!-- 主题按钮：把"当前主题名"和"切换入口"合成一个控件。
+             原来的做法是一个看不懂的"半黑半白圆环"图标 + 旁边一个只读的主题名标签，
+             得先猜圆环是干嘛的；现在整块就是按钮，上面直接写着当前主题叫什么。 -->
+        <Button Grid.Column="2" Classes="themeChip" x:Name="ThemeButton"
+                Click="OnThemeMenuClick" ToolTip.Tip="切换主题">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <!-- 调色板：比圆环更像个"换配色"的动作 -->
+            <Path Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center"
+                  Data="{StaticResource IconPalette}" />
+            <TextBlock Text="{Binding CurrentThemeName}" VerticalAlignment="Center" />
+            <Path Width="8" Height="8" Stretch="Uniform" VerticalAlignment="Center"
+                  Data="M4 6l4 4 4-4" />
+          </StackPanel>
+        </Button>
+
+        <!-- GitHub 与"检查更新"：都做成轻量的线条图标按钮，悬停才出底色，
+             不跟右侧三个系统按钮抢注意力（系统按钮永远是最后三格）。 -->
+        <Button Grid.Column="3" Classes="titleIcon" x:Name="GitHubButton"
+                Click="OnGitHubClick" ToolTip.Tip="打开项目仓库">
+          <Path Classes="filled" Data="{StaticResource IconGitHub}" />
+        </Button>
+
+        <Button Grid.Column="4" Classes="titleIcon" x:Name="UpdateButton"
+                Click="OnCheckUpdateClick" ToolTip.Tip="检查更新">
+          <Path Data="{StaticResource IconCloudDownload}" />
+        </Button>
+
+        <!-- 设置：放在"检查更新"后面、系统按钮前面 —— 都是"管这个软件本身"的动作，
+             挨着放才成一类；系统按钮永远是最后三格。
+             点一下把主界面切成设置界面，再点一下回工作区（见 SettingsView）。 -->
+        <Button Grid.Column="5" Classes="titleIcon" x:Name="SettingsButton"
+                Classes.active="{Binding IsSettingsOpen}"
+                Command="{Binding ToggleSettingsCommand}"
+                ToolTip.Tip="{Binding SettingsButtonToolTip}">
+          <!-- 齿轮比同排那几个图标"重"一档线宽：它的齿形本来就碎，
+               1.9 缩到 16px 只剩 1.27px，齿缝会糊；2.4 才和左右那两颗视觉重量相当 -->
+          <Path Data="{StaticResource IconSettings}" StrokeThickness="2.4" />
+        </Button>
+
+        <!-- 窗口置顶（钉子）：1.9.8 从「视图 → 窗口置顶」挪到标题栏。
+             用户的原话是"在设置后面加一个钉子图案的按钮，点击就直接把窗口固定在顶层"——
+             置顶是"随时可能开、随时可能关"的状态，藏在两级菜单里每次都要翻一遍。
+
+             为什么是 Button 而不是 ToggleButton：本项目的图标按钮样式是
+             `Button.titleIcon` 这种精确类型选择器，ToggleButton（Button 的子类）
+             匹配不到，会退回默认外观且不报错——1.9.5 的 HintIcon 就栽在这上面。
+             状态表达改用 Classes.active 绑 AlwaysOnTop：底色换浅主色、图标换主色，
+             和"设置按钮亮着就表示正在设置里"完全同一套语义。 -->
+        <Button Grid.Column="6" Classes="titleIcon" x:Name="PinButton"
+                Classes.active="{Binding AlwaysOnTop}"
+                Click="OnToggleAlwaysOnTopClick"
+                ToolTip.Tip="{Binding PinButtonToolTip}">
+          <Path Data="{StaticResource IconPin}" />
+        </Button>
+
+        <Button Grid.Column="7" Classes="caption" Click="OnMinimizeClick" ToolTip.Tip="最小化">
+          <Rectangle Width="10" Height="1.4" RadiusX="0.7" RadiusY="0.7" />
+        </Button>
+        <Button Grid.Column="8" Classes="caption" x:Name="MaximizeButton" Click="OnMaximizeClick" ToolTip.Tip="最大化">
+          <Path x:Name="MaximizeIcon" Data="M3 3h10v10H3z" />
+        </Button>
+        <Button Grid.Column="9" Classes="caption close" Click="OnCloseClick" ToolTip.Tip="关闭">
+          <Path Data="M3 3l10 10 M13 3L3 13" />
+        </Button>
+
+        <!-- ══ 主题选择弹窗 ══
+             原来是 ContextMenu（方角、灰底、前面一个黑圆点，看不出是哪个主题）。
+             现在换成自绘卡片：每项一个代表色圆点 + 名称 + 明暗提示，
+             当前生效项浅主色底并带勾。条目在代码里生成（见 BuildThemeMenu）。 -->
+        <!-- 底部 1px 分隔线：做成叠放层而不是 Border 的描边，
+             否则它会吃掉 1px 内容高度、把整行内容顶高半像素 -->
+        <Rectangle Grid.Column="0" Grid.ColumnSpan="10" Classes="titleDivider" />
+
+        <Popup Grid.Column="2" x:Name="ThemePopup"
+               PlacementTarget="{Binding #ThemeButton}"
+               Placement="BottomEdgeAlignedRight"
+               HorizontalOffset="0" VerticalOffset="6"
+               IsLightDismissEnabled="True">
+          <Border Classes="themeCard" x:Name="ThemeCard">
+            <StackPanel x:Name="ThemeList" />
+          </Border>
+        </Popup>
+      </Grid>
+    </Border>
+
+    <!-- ══ 工具条 ══
+         进设置时一起隐藏：这一排全是"改工作区"的动作，工作区都看不见了还留着它，
+         点了只会作用在看不见的地方。
+
+         图标统一用 ctl:MenuGlyph + Classes="toolIcon"（固定画布缩放、统一墨色），
+         实心的三颗（▶ ■ ⚡）再加 Classes="solid"。为什么不用 Path：见 AppTheme 里
+         "工具条的 11 颗图标"那段注释 —— 一句话，Path 按墨迹包围盒缩放，
+         同一排图标的线宽会各不相同。 -->
+    <Border Grid.Row="1" Classes="toolbar" IsVisible="{Binding !IsSettingsOpen}">
+      <StackPanel Orientation="Horizontal" Spacing="4">
+        <!-- 只在"通道 / 从站"视图里出现：扁平视图下没有"通道"这个对象，
+             留着它等于给用户两个都能建的入口，而其中一个建出来的东西在侧栏里看不见 -->
+        <Button Classes="tool" x:Name="NewChannelButton"
+                Command="{Binding CreateConnectionCommand}" ToolTip.Tip="新建通道"
+                IsVisible="{Binding IsTreeView}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <ctl:MenuGlyph Classes="toolIcon" Data="{StaticResource IconConnection}" />
+            <TextBlock Text="新建通道" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+        <Button Classes="tool" Command="{Binding CreateSlaveCommand}" ToolTip.Tip="新建从站">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <ctl:MenuGlyph Classes="toolIcon" Data="{StaticResource IconServer}" />
+            <TextBlock Text="新建从站" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
+        <Rectangle Width="1" Height="18" Fill="{DynamicResource BorderLineBrush}" Margin="6,0" />
+
+        <!-- 启停合一：一个通道不可能同时"正在启动"和"正在停止"，
+             原来并排两个按钮里总有一个点了没意义，还白占一段工具栏宽度。
+             现在按状态决定文案、图标和配色，点一下即切换。
+             图标本身不再预置颜色：静止态与全排同一个墨色，
+             "危险/主色"由 .danger / .accent 在悬停时才亮出来。 -->
+        <Button Classes="tool"
+                Classes.accent="{Binding !SelectedConnectionIsOpen}"
+                Classes.danger="{Binding SelectedConnectionIsOpen}"
+                Command="{Binding ToggleSelectedConnectionCommand}"
+                ToolTip.Tip="{Binding SelectedConnectionToggleTip}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <ctl:MenuGlyph Classes="toolIcon solid" Data="{StaticResource IconPlay}"
+                           IsVisible="{Binding !SelectedConnectionIsOpen}" />
+            <ctl:MenuGlyph Classes="toolIcon solid" Data="{StaticResource IconStop}"
+                           IsVisible="{Binding SelectedConnectionIsOpen}" />
+            <TextBlock Text="{Binding SelectedConnectionToggleText}" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
+        <Button Classes="tool"
+                Classes.accent="{Binding !AnyConnectionOpen}"
+                Command="{Binding ToggleAllConnectionsCommand}"
+                ToolTip.Tip="{Binding AllConnectionToggleTip}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <ctl:MenuGlyph Classes="toolIcon solid" Data="{StaticResource IconPlayAll}"
+                           IsVisible="{Binding !AnyConnectionOpen}" />
+            <ctl:MenuGlyph Classes="toolIcon solid" Data="{StaticResource IconStopAll}"
+                           IsVisible="{Binding AnyConnectionOpen}" />
+            <TextBlock Text="{Binding AllConnectionToggleText}" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
+        <Rectangle Width="1" Height="18" Fill="{DynamicResource BorderLineBrush}" Margin="6,0" />
+
+        <Button Classes="tool" Command="{Binding AddPointCommand}" ToolTip.Tip="新增信息对象">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <ctl:MenuGlyph Classes="toolIcon" Data="{StaticResource IconPlus}" />
+            <TextBlock Text="新增点位" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+        <Button Classes="tool" Command="{Binding EditPointCommand}" ToolTip.Tip="修改选中的信息点">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <ctl:MenuGlyph Classes="toolIcon" Data="{StaticResource IconEdit}" />
+            <TextBlock Text="修改点位" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+        <Button Classes="tool danger" Command="{Binding DeletePointCommand}" ToolTip.Tip="删除选中点位">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <ctl:MenuGlyph Classes="toolIcon" Data="{StaticResource IconDelete}" />
+            <TextBlock Text="删除点位" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
+        <Rectangle Width="1" Height="18" Fill="{DynamicResource BorderLineBrush}" Margin="6,0" />
+
+        <Button Classes="tool accent" Click="OnBatchChangeClick" ToolTip.Tip="批量变化数据点（随机范围 / 固定步长）">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <ctl:MenuGlyph Classes="toolIcon solid" Data="{StaticResource IconBatch}" />
+            <TextBlock Text="批量变化" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+        <Button Classes="tool" Click="OnFrame104Click" ToolTip.Tip="报文解析">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <ctl:MenuGlyph Classes="toolIcon" Data="{StaticResource IconParse}" />
+            <TextBlock Text="报文解析" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
+        <!-- 1.9.9：实时曲线从工具条撤回菜单（工具条宽度有限，加它会把
+             "删除点位"以后的动作挤到看不见）。报文监视留在条上：
+             联调时最常做的是"边改点位边看报文"，两个动作要在同一屏。 -->
+        <Button Classes="tool" Click="OnTrafficWindowClick" ToolTip.Tip="打开通信报文监视（非模态，可拖到其它屏幕 / 置顶）">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <ctl:MenuGlyph Classes="toolIcon" Data="{StaticResource IconTraffic}" />
+            <TextBlock Text="报文监视" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+      </StackPanel>
+    </Border>
+
+    <!-- ══ 状态栏 ══
+         四段式，从左到右：侧栏开关 → 运行健康度 → 过程信息 → 容量统计 + 软件名。
+
+         几处改法说明：
+         ① 侧栏开关原来只是状态栏最左边一根细箭头，用户说"看着不太明显、
+            看不出来是个按钮"——现在给它一圈底色和描边，落在栏内是个明确的按钮。
+         ② 状态栏原来全是灰字，"一眼判断不出当前服务好坏"。现在第二格是一颗
+            带色的小胶囊：停止=灰、监听中=橙、主站已接入=绿，和通道列表里的
+            状态灯同一套语义，不用再扭头去左边找那个小圆点。
+         ③ 软件名从标题栏挪到最右边——标题栏那一行让给菜单了。
+         ④ 整行固定 30 高、左右内边距 8、上下内边距 0，所有子元素
+            VerticalAlignment=Center，保证文字真的在栏内居中而不是"骑"在下沿。 -->
+    <Border Grid.Row="3" Classes="statusbar" x:Name="StatusBar">
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+        <!-- Tag 是当前状态的显式标记：初始展开 -> "collapse"（提示将来可以收起）。
+             只靠图标看不出来，自检要拿它判断图标到底翻没翻。 -->
+        <Button Grid.Column="0" Classes="statusToggle" x:Name="SidebarToggleButton"
+                Tag="collapse" Click="OnToggleSidebarClick" ToolTip.Tip="收起侧栏">
+          <Path x:Name="SidebarToggleIcon" Data="M9 6l-4 6 4 6 M15 6l-4 6 4 6"
+                Stroke="{DynamicResource TextSecondaryBrush}"
+                StrokeThickness="1.8" StrokeLineCap="Round" StrokeJoin="Round"
+                Width="10" Height="12" Stretch="Uniform" />
+        </Button>
+
+        <!-- 运行健康度：圆点 + 文字 + 浅底，三处颜色都由 ViewModel 按通道状态给 -->
+        <Border Grid.Column="1" Classes="healthPill" Background="{Binding HealthSoftBrush}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Ellipse Width="7" Height="7" Fill="{Binding HealthBrush}" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding HealthText}" Foreground="{Binding HealthForeground}"
+                       FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+          </StackPanel>
+        </Border>
+
+        <TextBlock Grid.Column="2" Classes="statusText" Text="{Binding StatusText}"
+                   VerticalAlignment="Center" Margin="10,0,10,0"
+                   TextTrimming="CharacterEllipsis" />
+
+        <TextBlock Grid.Column="3" Classes="hint" Text="{Binding RunningSummary}"
+                   VerticalAlignment="Center" Margin="0,0,14,0" />
+
+        <TextBlock Grid.Column="4" Classes="statusBrand" Text="IEC104-Server"
+                   VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+
+    <!-- ══ 主体 ══
+         进设置时整块隐藏（IsVisible=false），而不是销毁重建：
+         工作区里的对象树、选中项、滚动位置都保持原样，切回来就是刚才的样子。 -->
+    <Grid Grid.Row="2" x:Name="SidebarGrid" Margin="8" IsVisible="{Binding !IsSettingsOpen}">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="280" />
+        <ColumnDefinition Width="4" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+
+      <!-- 左侧：两种视图 + 底部切换
+           ── 为什么默认是"从站列表"而不是原来的"通道 / 从站"两棵树 ──
+           现场 99% 是一个装置 = 一台从站 = 一个 IP。"通道"是 104 这一层为了监听
+           端口才存在的东西（一路 TCP），不是用户要组织的对象。原来一进来就是两棵树、
+           建装置还得"先建通道再挂从站"，等于把协议的账算到用户头上。
+           树形视图保留且随时可切：一台前置机带多台 RTU（一个端口、靠公共地址区分）
+           是规约里真实存在的形态，不能因为常见场景就删掉。
+           两种视图共用同一份数据和同一个选中项，切视图不丢选中、右侧点表不跳。 -->
+      <Border Grid.Column="0" Classes="panel" x:Name="SidebarPanel">
+        <Grid RowDefinitions="*,Auto">
+
+          <!-- ══════ 视图一：从站列表（扁平，默认）══════
+               这一列里没有"通道"这个对象，所以标题条上不出现"新建通道"——
+               建从站时会自动配一条通道（见 MainWindowViewModel.CreateSlave）。 -->
+          <Grid Grid.Row="0" x:Name="FlatSlavePanel" RowDefinitions="Auto,*"
+                IsVisible="{Binding IsFlatView}">
+
+            <Border Grid.Row="0" Classes="groupHeader">
+              <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                <TextBlock Grid.Column="0" Classes="panelTitle" Text="从站" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding FlatSlaveCount}" Classes="hint"
+                           VerticalAlignment="Center" Margin="6,0,6,0" />
+                <Button Grid.Column="2" Classes="tool" Command="{Binding BatchCreateSlaveCommand}"
+                        Margin="0,0,2,0" ToolTip.Tip="批量创建从站（IP 递增 / 按步长）">
+                  <Path Data="{StaticResource IconBatchCreate}" Width="13" Height="13" />
+                </Button>
+                <Button Grid.Column="3" Classes="tool" Command="{Binding CreateSlaveCommand}"
+                        Margin="0,0,4,0" ToolTip.Tip="新建从站（自动配一条通道，填个 IP 就完事）">
+                  <Path Data="{StaticResource IconPlus}" Width="13" Height="13" />
+                </Button>
+                <Button Grid.Column="4" Classes="chevron" Click="OnToggleSidebarClick"
+                        ToolTip.Tip="收起侧栏">
+                  <Path Data="M15 6l-4 6 4 6 M9 6l-4 6 4 6"
+                        Stroke="{DynamicResource TextSecondaryBrush}"
+                        StrokeThickness="1.9" StrokeLineCap="Round" StrokeJoin="Round"
+                        Width="11" Height="13" Stretch="Uniform" />
+                </Button>
+              </Grid>
+            </Border>
+
+            <Panel Grid.Row="1">
+              <ListBox x:Name="SlaveRowList" Classes="slaveTags"
+                       ItemsSource="{Binding SlaveRows}"
+                       SelectedItem="{Binding SelectedSlaveRow, Mode=TwoWay}"
+                       Background="Transparent" BorderThickness="0"
+                       ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                       PointerPressed="OnListPointerPressed"
+                       DoubleTapped="OnSlaveRowListDoubleTapped">
+
+                <!-- 行本身就是一张标签卡：内边距、圆角、悬停底色全交给标签，
+                     ListBoxItem 只当容器（两层内边距套在一起会让文字缩得没地方站） -->
+                <ListBox.Styles>
+                  <Style Selector="ListBoxItem">
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="Margin" Value="4,2" />
+                    <Setter Property="MinHeight" Value="0" />
+                    <Setter Property="FontSize" Value="12" />
+                  </Style>
+                  <Style Selector="ListBoxItem /template/ ContentPresenter">
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="CornerRadius" Value="6" />
+                  </Style>
+                  <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+                    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+                    <Setter Property="CornerRadius" Value="6" />
+                  </Style>
+                  <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+                    <Setter Property="Background" Value="{DynamicResource SelectionBrush}" />
+                    <Setter Property="CornerRadius" Value="6" />
+                  </Style>
+                </ListBox.Styles>
+
+                <ListBox.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="编辑（IP / 端口 / 公共地址）…" Click="OnSlaveMenuEditClick">
+                      <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconEdit}" /></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="复制从站" Click="OnSlaveMenuCopyClick">
+                      <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconCopy}" /></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="批量创建从站…" Command="{Binding BatchCreateSlaveCommand}">
+                      <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconBatchCreate}" /></MenuItem.Icon>
+                    </MenuItem>
+                    <Separator />
+                    <MenuItem Header="批量新增数据点…" Click="OnInitDataClick">
+                      <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconDatabase}" /></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="批量变化数据点…" Click="OnBatchChangeClick">
+                      <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconBatch}" /></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="缓变配置（逐点）…" Click="OnAutoChangeClick">
+                      <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconWave}" /></MenuItem.Icon>
+                    </MenuItem>
+                    <Separator />
+                    <MenuItem Header="删除从站" Click="OnSlaveMenuDeleteClick">
+                      <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconDelete}" /></MenuItem.Icon>
+                    </MenuItem>
+                  </ContextMenu>
+                </ListBox.ContextMenu>
+
+                <!-- 标签卡：状态用颜色说话（灰=已停止 / 橙=监听中 / 绿=主站已接入），
+                     颜色不铺满整行——底色用浅色主题令牌、描边和字用同套深色，
+                     一屏十几个从站也不会变成一堵色块墙。
+                     行底色保持透明，选中/悬停时 ListBoxItem 的底色才看得见。 -->
+                <ListBox.ItemTemplate>
+                  <DataTemplate>
+                    <Border Classes="slaveTag" BorderBrush="{Binding TagBorder}"
+                            ToolTip.Tip="{Binding ToolTipText}">
+                      <Grid ColumnDefinitions="Auto,*,Auto">
+                        <!-- 灯相对"两行整体"垂直居中，不是相对第一行。 -->
+                        <Panel Grid.Column="0" Width="14" Height="14" VerticalAlignment="Center"
+                               Margin="0,0,7,0">
+                          <Ellipse Classes="halo" Width="14" Height="14"
+                                   Fill="{Binding StateHaloBrush}" Opacity="0.45" />
+                          <Ellipse Width="8" Height="8" Fill="{Binding StateBrush}" />
+                        </Panel>
+
+                        <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                          <!-- 第一行：从站名称 + 公共地址 -->
+                          <TextBlock Text="{Binding DisplayText}" FontWeight="SemiBold"
+                                     TextTrimming="CharacterEllipsis" />
+
+                          <!-- 第二行：IP:端口 + 信号点总数。
+                               这里必须是**一个** TextBlock 里放多个 Run，不能是并排的两个 TextBlock：
+                               两个 TextBlock 即使字号、LineHeight、VerticalAlignment 全都一致，
+                               它们的文字在各自盒子里仍按**各自字体的 ascent/descent** 摆
+                               ——IP 走 Consolas、点数走默认中文字体，基线天生差一两个像素，
+                               肉眼看就是"一高一低"（上一版就踩了这个）。
+                               放进同一个 TextBlock 后由排版引擎统一基线，这才是真的齐。 -->
+                          <TextBlock FontSize="11" VerticalAlignment="Center"
+                                     TextTrimming="CharacterEllipsis">
+                            <Run Text="{Binding EndPointText}" FontFamily="Consolas, monospace"
+                                 Foreground="{Binding TagForeground}" />
+                            <Run Text="  ·  " Foreground="{DynamicResource TextDisabledBrush}" />
+                            <Run Text="{Binding PointCountText}"
+                                 Foreground="{DynamicResource TextSecondaryBrush}" />
+                          </TextBlock>
+                        </StackPanel>
+
+                        <Border Grid.Column="2" Classes="statePill" BorderBrush="{Binding TagBorder}"
+                                VerticalAlignment="Center" Margin="8,0,0,0">
+                          <TextBlock Text="{Binding StateShortText}" FontSize="10"
+                                     Foreground="{Binding TagForeground}" />
+                        </Border>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+
+              <!-- 空列表提示：什么都没建的时候，直接把下一步说出来，
+                   而不是留一片空白让人猜"是不是没加载上" -->
+              <TextBlock Text="还没有从站。点上面的「+」新建一台，填个 IP 就能开始监听。"
+                         Classes="hint" TextWrapping="Wrap" Margin="14,10"
+                         IsVisible="{Binding HasNoSlaves}" />
+            </Panel>
+          </Grid>
+
+          <!-- ══════ 视图二：通道 / 从站（树）══════
+               两个分组各自可收起，整栏也可收起。一个通道下可以挂多个从站。 -->
+          <Grid Grid.Row="0" x:Name="ChannelTreePanel" RowDefinitions="Auto,Auto,4,Auto,*"
+                IsVisible="{Binding IsTreeView}">
+
+            <!-- 分组标题条：整条给一层底，把"折叠箭头 + 标题 + 计数 + 按钮"
+                 圈成同一个视觉单元。之前箭头在左、按钮在右、中间大片空白，
+                 折叠按钮看着跟后面的功能没关系。 -->
+            <Border Grid.Row="0" Classes="groupHeader">
+              <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto">
+                <Button Grid.Column="0" Classes="chevron" Click="OnToggleChannelGroupClick"
+                        ToolTip.Tip="收起 / 展开通道列表">
+                  <TextBlock x:Name="ChannelChevron" Text="▼" />
+                </Button>
+                <TextBlock Grid.Column="1" Classes="panelTitle" Text="通道" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{Binding Connections.Count}" Classes="hint"
+                           VerticalAlignment="Center" Margin="0,0,6,0" />
+                <Button Grid.Column="3" Classes="tool" Command="{Binding CreateConnectionCommand}"
+                        Margin="0,0,0,0" ToolTip.Tip="新建通道">
+                  <Path Data="{StaticResource IconPlus}" Width="13" Height="13" />
+                </Button>
+                <!-- 竖线把"新建"和"收起整栏"分开，避免两个图标挤在一起分不清 -->
+                <Rectangle Grid.Column="4" Width="1" Height="14" Margin="4,0"
+                           Fill="{DynamicResource BorderLineBrush}" VerticalAlignment="Center" />
+                <!-- 收起整栏：放在侧栏内部，收起后用状态栏那颗按钮还原 -->
+                <Button Grid.Column="5" Classes="chevron" Click="OnToggleSidebarClick"
+                        ToolTip.Tip="收起侧栏">
+                  <Path Data="M15 6l-4 6 4 6 M9 6l-4 6 4 6"
+                        Stroke="{DynamicResource TextSecondaryBrush}"
+                        StrokeThickness="1.9" StrokeLineCap="Round" StrokeJoin="Round"
+                        Width="11" Height="13" Stretch="Uniform" />
+                </Button>
+              </Grid>
+            </Border>
+
+            <ListBox Grid.Row="1" x:Name="ConnectionList" MaxHeight="150" ItemsSource="{Binding Connections}"
+                     SelectedItem="{Binding SelectedConnection, Mode=TwoWay}"
+                     Background="Transparent" BorderThickness="0"
+                     PointerPressed="OnListPointerPressed"
+                     DoubleTapped="OnConnectionListDoubleTapped">
+              <ListBox.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="启动 / 停止" Click="OnConnMenuToggleClick" />
+                  <MenuItem Header="全部启动" Click="OnConnMenuOpenAllClick" />
+                  <MenuItem Header="全部停止" Click="OnConnMenuCloseAllClick" />
+                  <Separator />
+                  <MenuItem Header="编辑通道参数…" Click="OnConnMenuEditClick" />
+                  <MenuItem Header="新建从站…" Click="OnConnMenuAddSlaveClick" />
+                  <Separator />
+                  <MenuItem Header="删除通道" Click="OnConnMenuDeleteClick" />
+                </ContextMenu>
+              </ListBox.ContextMenu>
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,1">
+                    <!-- 状态灯：灰=已停止，橙=监听中，绿=主站已接入 -->
+                    <Panel Grid.Column="0" Width="14" Height="14" VerticalAlignment="Center" Margin="0,0,6,0">
+                      <Ellipse Classes="halo" Width="14" Height="14" Fill="{Binding StateHaloBrush}" Opacity="0.45" />
+                      <Ellipse Width="8" Height="8" Fill="{Binding StateBrush}" />
+                    </Panel>
+                    <StackPanel Grid.Column="1">
+                      <TextBlock Text="{Binding DisplayText}" />
+                      <TextBlock Text="{Binding StateText}" Classes="hint" />
+                    </StackPanel>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+
+            <GridSplitter Grid.Row="2" ResizeDirection="Rows" Background="Transparent" Height="4" />
+
+            <!-- 从站分组标题条：与通道分组用同一套 groupHeader 结构，
+                 两个分组的"箭头 + 标题 + 计数 + 操作"落在同一条底色里。 -->
+            <Border Grid.Row="3" Classes="groupHeader">
+              <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                <Button Grid.Column="0" Classes="chevron" Click="OnToggleSlaveGroupClick"
+                        ToolTip.Tip="收起 / 展开从站列表">
+                  <TextBlock x:Name="SlaveChevron" Text="▼" />
+                </Button>
+                <TextBlock Grid.Column="1" Classes="panelTitle" Text="从站" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{Binding SelectedConnection.Slaves.Count}" Classes="hint"
+                           VerticalAlignment="Center" Margin="0,0,6,0" />
+                <Button Grid.Column="3" Classes="tool" Command="{Binding BatchCreateSlaveCommand}"
+                        Margin="0,0,2,0" ToolTip.Tip="批量创建从站（IP 递增 / 按步长）">
+                  <Path Data="{StaticResource IconBatchCreate}" Width="13" Height="13" />
+                </Button>
+                <Button Grid.Column="4" Classes="tool" Command="{Binding CreateSlaveCommand}"
+                        Margin="0,0,4,0" ToolTip.Tip="新建从站">
+                  <Path Data="{StaticResource IconPlus}" Width="13" Height="13" />
+                </Button>
+              </Grid>
+            </Border>
+
+            <ListBox Grid.Row="4" x:Name="SlaveList" ItemsSource="{Binding SelectedConnection.Slaves}"
+                     SelectedItem="{Binding SelectedSlave, Mode=TwoWay}"
+                     Background="Transparent" BorderThickness="0"
+                     PointerPressed="OnListPointerPressed"
+                     DoubleTapped="OnSlaveListDoubleTapped">
+              <ListBox.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="编辑从站…" Click="OnSlaveMenuEditClick">
+                    <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconEdit}" /></MenuItem.Icon>
+                  </MenuItem>
+                  <MenuItem Header="复制从站" Click="OnSlaveMenuCopyClick">
+                    <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconCopy}" /></MenuItem.Icon>
+                  </MenuItem>
+                  <MenuItem Header="批量创建从站…" Command="{Binding BatchCreateSlaveCommand}">
+                    <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconBatchCreate}" /></MenuItem.Icon>
+                  </MenuItem>
+                  <Separator />
+                  <MenuItem Header="批量新增数据点…" Click="OnInitDataClick">
+                    <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconDatabase}" /></MenuItem.Icon>
+                  </MenuItem>
+                  <MenuItem Header="批量变化数据点…" Click="OnBatchChangeClick">
+                    <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconBatch}" /></MenuItem.Icon>
+                  </MenuItem>
+                  <MenuItem Header="缓变配置（逐点）…" Click="OnAutoChangeClick">
+                    <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconWave}" /></MenuItem.Icon>
+                  </MenuItem>
+                  <Separator />
+                  <MenuItem Header="删除从站" Click="OnSlaveMenuDeleteClick">
+                    <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconDelete}" /></MenuItem.Icon>
+                  </MenuItem>
+                </ContextMenu>
+              </ListBox.ContextMenu>
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Margin="0,1">
+                    <TextBlock Text="{Binding DisplayText}" />
+                    <TextBlock Text="{Binding PointCount, StringFormat='{}{0} 个信息对象'}" Classes="hint" />
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Grid>
+
+          <!-- ══════ 底部：视图切换 ══════
+               放最下面的理由：这是"整个侧栏长什么样"的开关，不属于任何一列内容；
+               摆在标题条右侧会被读成"通道这一块的操作"，而且切到扁平视图后
+               那个标题条就不存在了，按钮会跟着消失——正是用户提的那个问题。
+
+               1.9.1：原来并排两颗胶囊（从站列表 / 通道·从站），改成**一整条圆角按钮**。
+               两颗并排在 280px 的侧栏里本来就挤，还得先判断"哪颗是当前"再点另一颗；
+               现在点一下就在两种视图之间切，字面直接写"切换到 X"，没有理解成本。
+               配色全走主题令牌（PrimarySoft 底 + PrimarySoftText 字，悬停转 Primary），
+               六套主题（含两套深色）各自成立，不需要为它新增颜色。 -->
+          <Border Grid.Row="1" Classes="viewSwitchBar">
+            <Button Classes="viewSwitch" Command="{Binding ToggleSidebarViewCommand}"
+                    ToolTip.Tip="{Binding SidebarViewToolTip}">
+              <!-- 图标和文字当一组居中。
+                   右侧原来还有一颗 chevron，1.9.1 按用户要求去掉了：
+                   箭头本身已经表达了"来回切"，再多一个">"是在暗示"点进去还有一层"，
+                   而这颗按钮点一下就地切换、并不跳转，两个箭头反而互相打架。 -->
+              <StackPanel Orientation="Horizontal" Spacing="7"
+                          HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Path Data="{StaticResource IconSwap}" Width="12" Height="12"
+                      Stretch="Uniform" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding SidebarViewSwitchText}" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+          </Border>
+        </Grid>
+      </Border>
+
+      <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="Transparent" />
+
+      <!-- 右侧：点表 + 监视 -->
+      <!-- 原来这一列最上面还有一条"1号从站 公共地址 1 · 16 个信息对象 [新增点位][修改][删除][导出 CSV]"
+           的摘要条。第十轮之后它已经不承担任何独有职责了：
+             · 从站名与点数：左侧从站列表逐条就有，底下还有分类型页签的计数徽标；
+             · 新增/修改/删除：顶部工具条、信息对象菜单、点表右键菜单三处都能做，
+               而且工具条那几个是带图标的，比这里的纯文字按钮更好认；
+             · 导出 CSV：文件菜单和点表右键菜单都有。
+           留着的唯一效果是把点表往下压 40px、并且和左侧侧栏的顶边错开。
+           所以整条撤掉，右侧两栏（侧栏 / 点表）现在从同一条线上开始。 -->
+      <Grid Grid.Column="2" x:Name="MonitorHostGrid">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="*" />
+          <!-- 分隔条这一行在面板收起时压成 0：留 4px 的空白会看着像"面板还在、只是空了"。
+               RowDefinition 不是控件，x:Name 不生成字段（Avalonia 只给 Control 生成），
+               所以 code-behind 一律按 MonitorHostGrid.RowDefinitions[1] / [2] 取。 -->
+          <RowDefinition Height="4" />
+          <!-- 展开时这个高度会被 GridSplitter 改写，收起时由 code-behind 设成 36；
+               收起前的值记在 _monitorHeightBeforeCollapse 里，展开时原样还回去 -->
+          <RowDefinition Height="240" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Classes="panel">
+          <Grid RowDefinitions="*,Auto">
+
+            <!-- 信号区标签：第一个"全部"，其余按 ASDU 类型分。
+                 标签栏放在表格下方（贴近底部的报文监视区），
+                 这样上方给数据留出完整的可视高度。
+                 标签栏与表格是分离的——所有标签共用同一个表格，
+                 切换标签只是换 ItemsSource。若每个标签各建一个 DataGrid，
+                 点位上千时会有 N 份行控件，切换和刷新都会卡。 -->
+            <Border Grid.Row="1" BorderBrush="{DynamicResource BorderLineBrush}" BorderThickness="0,1,0,0">
+              <Grid ColumnDefinitions="*,Auto">
+                <ListBox Grid.Column="0" Classes="tabbar" x:Name="PointTabBar"
+                         ItemsSource="{Binding PointTabs}"
+                         SelectedItem="{Binding SelectedPointTab, Mode=TwoWay}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                         ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                  <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                  </ListBox.ItemsPanel>
+                  <ListBox.ItemTemplate>
+                    <DataTemplate>
+                      <StackPanel Orientation="Horizontal" Spacing="6" ToolTip.Tip="{Binding ToolTip}">
+                        <TextBlock Text="{Binding Caption}" VerticalAlignment="Center" />
+                        <Border Background="{DynamicResource PrimarySoftBrush}" CornerRadius="8"
+                                Padding="6,1" MinWidth="20" VerticalAlignment="Center"
+                                IsVisible="{Binding HasPoints}">
+                          <TextBlock Text="{Binding CountText}" FontSize="10" HorizontalAlignment="Center"
+                                     Foreground="{DynamicResource PrimarySoftTextBrush}" />
+                        </Border>
+                      </StackPanel>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+
+                <!-- 分组方式切换：按 ASDU 类型 ⇄ 按电力大类。
+                     放在标签栏右端而不是工具栏里，理由是"它只影响这一排标签"，
+                     离自己作用的对象越近越好找。
+                     按钮上写的是**当前**的分法（不是点一下会变成什么）——
+                     和标签内容互相印证：看到标签是"单点信息/双点信息"，按钮就是"ASDU 类型"。
+                     配色全部走令牌，见 AppTheme.axaml 的 Button.modeToggle。 -->
+                <Button Grid.Column="1" Classes="modeToggle" x:Name="PointGroupModeButton"
+                        Command="{Binding TogglePointGroupModeCommand}"
+                        ToolTip.Tip="{Binding PointGroupModeToolTip}"
+                        Margin="8,0,8,0">
+                  <StackPanel Orientation="Horizontal" Spacing="5">
+                    <Path Width="12" Height="12" Stretch="Uniform" VerticalAlignment="Center"
+                          Data="{StaticResource IconSwap}" />
+                    <TextBlock Text="{Binding PointGroupModeCaption}" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+              </Grid>
+            </Border>
+
+            <!-- 点表。双击不再弹"修改信息点"对话框，而是就地编辑单元格：
+                 双击名称/点号 → 出现输入框，回车生效、Esc 取消；
+                 当前值与品质支持滚轮调整（Shift+滚轮步长 ×10）。
+                 整行编辑（改 ASDU 类型、三个品质位一起改）仍走右键第一项。 -->
+            <DataGrid Grid.Row="0" x:Name="PointDataGrid" ItemsSource="{Binding PointsInSelectedTab}"
+                      SelectedItem="{Binding SelectedPoint, Mode=TwoWay}"
+                      AutoGenerateColumns="False" IsReadOnly="True"
+                      LoadingRow="OnDataGridLoadingRow"
+                      CanUserReorderColumns="True" CanUserSortColumns="False">
+              <DataGrid.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="修改当前信息点…" Click="OnPointMenuEditClick">
+                    <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconEdit}" /></MenuItem.Icon>
+                  </MenuItem>
+                  <MenuItem Header="新增信息对象…" Click="OnPointMenuAddClick">
+                    <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconAddPoint}" /></MenuItem.Icon>
+                  </MenuItem>
+                  <MenuItem Header="删除信息对象" Click="OnPointMenuDeleteClick">
+                    <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconDelete}" /></MenuItem.Icon>
+                  </MenuItem>
+                  <Separator />
+                  <MenuItem Header="批量新增数据点…" Click="OnInitDataClick">
+                    <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconDatabase}" /></MenuItem.Icon>
+                  </MenuItem>
+                  <MenuItem Header="批量变化数据点…" Click="OnBatchChangeClick">
+                    <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconBatch}" /></MenuItem.Icon>
+                  </MenuItem>
+                  <Separator />
+                  <MenuItem Header="导出点表为 CSV…" Click="OnPointMenuExportClick">
+                    <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconExport}" /></MenuItem.Icon>
+                  </MenuItem>
+                </ContextMenu>
+              </DataGrid.ContextMenu>
+              <DataGrid.Columns>
+
+                <!-- 点号：改号需要重建协议层索引，提交失败（重号/越界）会自动回退。
+                     表头写成两行：主标题"点号" + 小一号的"10 进制"。
+                     为什么必须写清楚：IEC 104 的信息对象地址在协议帧里是 3 字节二进制，
+                     抓包工具（以及不少同类软件）默认按十六进制显示，
+                     现场看到 1001 会下意识当成 hex 去换算。这里表格显示的是十进制，
+                     不标出来就永远有人怀疑。悬停再补一句完整说明。
+                     两行都 TextAlignment=Center 且撑满列宽 —— 主标题的中心仍然等于列中心，
+                     既有的 header-align 断言（±2.5px）照旧成立。 -->
+                <DataGridTemplateColumn Width="92">
+                  <DataGridTemplateColumn.Header>
+                    <StackPanel Orientation="Vertical" ToolTip.Tip="点号按十进制显示。IEC 104 的信息对象地址在协议帧里是 3 字节二进制，抓包工具常按十六进制显示，两者数值不同但指的是同一个地址。">
+                      <TextBlock Text="点号" TextAlignment="Center" HorizontalAlignment="Stretch" />
+                      <TextBlock Text="10 进制" Classes="headerHint" />
+                    </StackPanel>
+                  </DataGridTemplateColumn.Header>
+                  <DataGridTemplateColumn.CellTemplate>
+                    <DataTemplate>
+                      <Grid>
+                        <TextBlock Text="{Binding ObjectAddress}" Tag="address" Classes="cellText"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0"
+                                   IsVisible="{Binding !IsAddressEditing}" />
+                        <TextBox Text="{Binding EditText, Mode=TwoWay}" Classes="cellEdit"
+                                 IsVisible="{Binding IsAddressEditing}"
+                                 KeyDown="OnCellEditKeyDown" LostFocus="OnCellEditLostFocus" />
+                      </Grid>
+                    </DataTemplate>
+                  </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <!-- 名称：唯一居左的列。表头 Padding 是 10、单元格几乎没有内边距，
+                     不补这个左边距，表头会比数据往右缩 11px，看着像串了列 -->
+                <DataGridTemplateColumn Width="*">
+                  <DataGridTemplateColumn.Header>
+                    <TextBlock Text="名称" TextAlignment="Left" HorizontalAlignment="Stretch" />
+                  </DataGridTemplateColumn.Header>
+                  <DataGridTemplateColumn.CellTemplate>
+                    <DataTemplate>
+                      <Grid>
+                        <TextBlock Text="{Binding Name}" Tag="name" Classes="cellText"
+                                   Margin="10,0,8,0"
+                                   HorizontalAlignment="Left" VerticalAlignment="Center"
+                                   IsVisible="{Binding !IsNameEditing}" />
+                        <TextBox Text="{Binding EditText, Mode=TwoWay}" Classes="cellEdit"
+                                 IsVisible="{Binding IsNameEditing}"
+                                 KeyDown="OnCellEditKeyDown" LostFocus="OnCellEditLostFocus" />
+                      </Grid>
+                    </DataTemplate>
+                  </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <!-- ASDU 类型：显示**中文名**而不是规约代号。
+                     原因很直接：现场大部分人是"这条是遥测还是遥信"这个层面的读者，
+                     一列 M_ME_NC_1 / M_SP_TB_1 看下来眼睛全在解密码。
+                     代号没有丢——悬停就有（代号 · 分类），报文监视那一页也仍然按代号显示，
+                     那两处才是需要对着报文逐字节核对的地方。
+                     列宽 150：目录里最长的中文名是"带变位检测的32位比特串"，
+                     再窄就会截断；Custom 类型由用户自己起名，用省略号兜底。 -->
+                <DataGridTemplateColumn Width="150">
+                  <DataGridTemplateColumn.Header>
+                    <TextBlock Text="ASDU 类型" TextAlignment="Center" HorizontalAlignment="Stretch" />
+                  </DataGridTemplateColumn.Header>
+                  <DataGridTemplateColumn.CellTemplate>
+                    <DataTemplate>
+                      <TextBlock Text="{Binding TypeName}" Tag="asdu" Classes="cellText"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0"
+                                 TextTrimming="CharacterEllipsis"
+                                 ToolTip.Tip="{Binding TypeTip}" />
+                    </DataTemplate>
+                  </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <!-- 当前值：滚轮改值，双击输入。值文字按状态着色（合绿/分灰/中间态橙/不确定红） -->
+                <DataGridTemplateColumn Width="140">
+                  <DataGridTemplateColumn.Header>
+                    <TextBlock Text="当前值" TextAlignment="Center" HorizontalAlignment="Stretch" />
+                  </DataGridTemplateColumn.Header>
+                  <DataGridTemplateColumn.CellTemplate>
+                    <DataTemplate>
+                      <Grid>
+                        <TextBlock Text="{Binding ValueText}" Tag="value" Classes="cellText value"
+                                   Foreground="{Binding ValueBrush}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Margin="0" TextTrimming="None"
+                                   IsVisible="{Binding !IsValueEditing}"
+                                   ToolTip.Tip="滚轮调值（Shift 加速）· 双击输入 · 回车生效" />
+                        <TextBox Text="{Binding EditText, Mode=TwoWay}" Classes="cellEdit"
+                                 IsVisible="{Binding IsValueEditing}"
+                                 KeyDown="OnCellEditKeyDown" LostFocus="OnCellEditLostFocus" />
+                      </Grid>
+                    </DataTemplate>
+                  </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <!-- 品质：徽标配色 + 滚轮在 8 种组合里轮换 -->
+                <DataGridTemplateColumn Width="104">
+                  <DataGridTemplateColumn.Header>
+                    <TextBlock Text="品质" TextAlignment="Center" HorizontalAlignment="Stretch" />
+                  </DataGridTemplateColumn.Header>
+                  <DataGridTemplateColumn.CellTemplate>
+                    <DataTemplate>
+                      <Border Classes="qualityBadge" Tag="quality"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                              Background="{Binding QualityBackground}"
+                              ToolTip.Tip="滚轮切换品质组合（IV/BL/SB）· 双击换下一档">
+                        <TextBlock Text="{Binding QualityText}" FontSize="11"
+                                   Foreground="{Binding QualityForeground}" />
+                      </Border>
+                    </DataTemplate>
+                  </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <DataGridTemplateColumn Width="156">
+                  <DataGridTemplateColumn.Header>
+                    <TextBlock Text="变化时间" TextAlignment="Center" HorizontalAlignment="Stretch" />
+                  </DataGridTemplateColumn.Header>
+                  <DataGridTemplateColumn.CellTemplate>
+                    <DataTemplate>
+                      <TextBlock Text="{Binding LastChangedAtText}" Tag="time" Classes="cellText muted"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" />
+                    </DataTemplate>
+                  </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+              </DataGrid.Columns>
+            </DataGrid>
+
+            <!-- 空标签页的一句话。
+                 和点表同处 Grid.Row=0、靠声明顺序盖在表格上方（不占布局），
+                 所以不用为它改表格的结构。
+                 电力大类固定四类，"遥控"这一栏本工具常态是 0 个——
+                 留一张白纸的话，第一反应会变成"点丢了"或"软件坏了"。 -->
+            <TextBlock Grid.Row="0" Classes="hint"
+                       Text="{Binding SelectedPointTab.EmptyHint}"
+                       IsVisible="{Binding !SelectedPointTab.HasPoints}"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       TextAlignment="Center" TextWrapping="Wrap" MaxWidth="420"
+                       Margin="24" IsHitTestVisible="False" />
+          </Grid>
+        </Border>
+
+        <GridSplitter Grid.Row="1" x:Name="MonitorSplitter"
+                      ResizeDirection="Rows" Background="Transparent" Height="4" />
+
+        <!-- 底部监视面板：主题见 AppTheme.axaml 的 PanelTabControl。
+             整块是一张 8 圆角卡片，页签条在卡片顶部、内容区在下，
+             选中的页签用和内容区相同的底色顶到接缝上，视觉上连成一体。
+             内容区的下两角圆角靠代码里给 DataGrid / ListBox 挂圆角 Clip
+             （Border 的 CornerRadius 不裁子元素，见 UpdateMonitorClip）。
+
+             ── 1.9.8 加的两个按钮为什么叠在右上角，而不是并进页签条 ──
+             页签条是 PanelTabControl 模板里的 PART_HeaderStrip，往模板里塞按钮
+             必须改 ControlTheme，而这个主题同时被别处引用，改一次影响一片。
+             两个页签靠左、右端本来就是空的，用 Panel 叠一层按钮组即可：
+             视觉上就在"这一栏的右上角"，而 DOM 上完全不碰 TabControl 的模板。
+             VerticalAlignment=Top + Margin 的 3px 是为了让按钮和 28 高的页签垂直居中
+             （页签条自身有 5px 上内边距）。 -->
+        <Border Grid.Row="2" Classes="panel" x:Name="MonitorPanel"
+                Classes.collapsed="{Binding !IsMonitorExpanded}">
+          <Panel>
+            <TabControl x:Name="MonitorTabs" Theme="{StaticResource PanelTabControl}"
+                        IsVisible="{Binding IsMonitorExpanded}">
+              <TabItem Header="ASDU 报文监视">
+                <DataGrid x:Name="RecordGrid" Classes="monitorGrid"
+                          ItemsSource="{Binding Records}" AutoGenerateColumns="False" IsReadOnly="True"
+                          LoadingRow="OnDataGridLoadingRow">
+                  <DataGrid.Columns>
+                    <DataGridTextColumn Header="时间" Binding="{Binding TimeText}" Width="100" />
+                    <DataGridTextColumn Header="方向" Binding="{Binding Direction}" Width="60" />
+                    <DataGridTextColumn Header="类型" Binding="{Binding TypeCode}" Width="120" />
+                    <DataGridTextColumn Header="名称" Binding="{Binding TypeName}" Width="160" />
+                    <DataGridTextColumn Header="传送原因" Binding="{Binding CauseText}" Width="140" />
+                    <DataGridTextColumn Header="公共地址" Binding="{Binding CommonAddress}" Width="80" />
+                    <DataGridTextColumn Header="信息对象" Binding="{Binding ObjectSummary}" Width="180" />
+                  </DataGrid.Columns>
+                </DataGrid>
+              </TabItem>
+
+              <TabItem Header="链路日志">
+                <ListBox x:Name="LogList" ItemsSource="{Binding Logs}"
+                         Background="Transparent" BorderThickness="0">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Text="{Binding}" FontFamily="Consolas, monospace" FontSize="11" />
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </TabItem>
+            </TabControl>
+
+            <!-- 收起态：一条和页签条同高（33）的标题带。
+                 不复用 TabControl 是因为它的内容区没法单独藏起来——
+                 页签条还在、下面却是空的，看着更像"面板坏了"。
+                 文字写明里面是什么，避免收起后忘了这栏原本放什么。 -->
+            <TextBlock x:Name="MonitorCollapsedLabel"
+                       IsVisible="{Binding !IsMonitorExpanded}"
+                       Text="ASDU 报文监视 · 链路日志（已收起）"
+                       Classes="hint" VerticalAlignment="Center" Margin="14,0,0,0" />
+
+            <!-- 右上角操作组：清空 + 收起/展开。
+                 两个按钮在展开态与收起态下位置一致，所以收起时不需要另建一套按钮。
+
+                 ── 垂直居中怎么算的（1.9.9 修）──
+                 原来用 Margin="0,3,6,0" 硬凑，结果按钮中心在 15、页签带中心在 16.5，
+                 差 1.5px，缩放下肉眼就能看出"两个按钮偏上、跟文字不一条线"。
+                 现在把这一组的**高度设成标题带高度 33**（= 页签 28 + 页签条 5 的上内边距），
+                 顶到内容区顶部，再让里面每个按钮 VerticalAlignment=Center——
+                 这样居中由布局算，不靠数字凑：展开态中心 16.5 正好压在页签条上，
+                 收起态（带高 34）差 0.5px，肉眼无差。
+                 Height 必须给，不能留 Auto：Panel 里不设高度的话这一组会按整个面板
+                 （展开时 240）居中，按钮会跑到面板正中间去。 -->
+            <StackPanel Orientation="Horizontal" Spacing="2"
+                        Height="33" VerticalAlignment="Top"
+                        HorizontalAlignment="Right" Margin="0,0,6,0">
+              <Button Classes="monitorAction" x:Name="MonitorClearButton"
+                      VerticalAlignment="Center"
+                      Click="OnClearRecordsClick"
+                      IsEnabled="{Binding IsMonitorExpanded}"
+                      ToolTip.Tip="清空下面这块内容（ASDU 报文与链路日志一起清）">
+                <!-- 垃圾桶而不是叉号：叉号在这一行右端会被读成"关闭面板"（
+                     系统关闭按钮也是叉），垃圾桶才是"清空内容"的通用语义。 -->
+                <Path Data="{StaticResource IconDelete}" />
+              </Button>
+              <Button Classes="monitorAction" x:Name="MonitorToggleButton"
+                      VerticalAlignment="Center"
+                      Click="OnToggleMonitorClick"
+                      ToolTip.Tip="{Binding MonitorToggleTip}">
+                <!-- 展开时显示"向下收"，收起时显示"向上展"，图标方向就是这个动作本身 -->
+                <Path x:Name="MonitorToggleIcon" Data="M5 9l7 7 7-7" />
+              </Button>
+            </StackPanel>
+          </Panel>
+        </Border>
+      </Grid>
+
+    </Grid>
+
+    <!-- ══ 设置界面 ══
+         占满"工具条 + 主体"两行：进设置时工具条与工作区都隐藏，这一块顶上来。
+         左侧是标签栏（一页一个可配置主题），右侧是当前页的具体操作。
+         为什么做成"就地切换"而不是弹窗：
+           · 设置改的东西（ASDU 类型、报文缓冲上限）当场作用在主界面上，
+             就地切换可以随手切回去看效果；
+           · 左侧标签栏能一直加页，弹窗式设置做到十几项就变成一列小标签挤在一起。
+         内容区用 ContentControl + 按类型分的 DataTemplate：
+         加一页 = 加一个 VM 子类 + 一份模板，容器和切换逻辑都不用动。 -->
+    <Grid Grid.Row="1" Grid.RowSpan="2" x:Name="SettingsView" Margin="8"
+          IsVisible="{Binding IsSettingsOpen}">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="208" />
+        <ColumnDefinition Width="8" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+
+      <!-- 左：设置项标签栏 -->
+      <Border Grid.Column="0" Classes="panel">
+        <Grid RowDefinitions="Auto,*,Auto">
+          <Border Grid.Row="0" Classes="groupHeader">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Grid.Column="0" Classes="panelTitle" Text="设置" VerticalAlignment="Center" />
+              <Button Grid.Column="1" Classes="chevron" x:Name="SettingsBackButton"
+                      Command="{Binding CloseSettingsCommand}" ToolTip.Tip="返回工作区">
+                <Path Data="{StaticResource IconBack}" Stroke="{DynamicResource TextSecondaryBrush}"
+                      StrokeThickness="1.9" StrokeLineCap="Round" StrokeJoin="Round"
+                      Width="12" Height="12" Stretch="Uniform" />
+              </Button>
+            </Grid>
+          </Border>
+
+          <ListBox Grid.Row="1" Classes="settingsNav" x:Name="SettingsNav"
+                   ItemsSource="{Binding Settings.Pages}"
+                   SelectedItem="{Binding Settings.SelectedPage, Mode=TwoWay}">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+
+          <!-- 「关于」钉在最下面：它是"这一版是什么"的静态信息，不是可改的配置，
+               所以跟上面几页用一条分隔线隔开，位置也不跟着 Pages 走。
+               底下一行小字写产品名 + 版本，想确认版本号时不用点进去。 -->
+          <Border Grid.Row="2" Classes="aboutNavBar">
+            <StackPanel Spacing="2">
+              <Button Classes="navItem" x:Name="AboutNavButton"
+                      Classes.active="{Binding Settings.IsAboutPageSelected}"
+                      Command="{Binding Settings.OpenAboutCommand}"
+                      ToolTip.Tip="软件信息与更新说明">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Path Data="{StaticResource IconInfo}" Width="13" Height="13" Stretch="Uniform"
+                        Stroke="{DynamicResource TextSecondaryBrush}" StrokeThickness="1.7"
+                        StrokeLineCap="Round" VerticalAlignment="Center" />
+                  <TextBlock Text="关于" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <TextBlock Text="{Binding Settings.VersionCaption}" Classes="hint"
+                         FontSize="10.5" Margin="10,0,0,0" />
+            </StackPanel>
+          </Border>
+        </Grid>
+      </Border>
+
+      <!-- 右：当前设置页 -->
+      <Border Grid.Column="2" Classes="panel" x:Name="SettingsContentPanel">
+        <Grid RowDefinitions="Auto,*">
+          <StackPanel Grid.Row="0" Margin="16,14,16,8" Spacing="5">
+            <TextBlock Text="{Binding Settings.CurrentPage.Title}" Classes="panelTitle"
+                       FontSize="14" />
+            <!-- 副标题按页决定显不显示：配置页需要一句"这页管什么"，
+                 "视图""关于"这种内容自解释的页不需要（见 SettingsPageViewModel.ShowSubtitle） -->
+            <TextBlock Text="{Binding Settings.CurrentPage.Subtitle}" Classes="hint"
+                       IsVisible="{Binding Settings.CurrentPage.ShowSubtitle}"
+                       TextWrapping="Wrap" MaxWidth="760" HorizontalAlignment="Left" />
+          </StackPanel>
+
+          <ContentControl Grid.Row="1" x:Name="SettingsPageHost" Content="{Binding Settings.CurrentPage}">
+            <ContentControl.DataTemplates>
+
+              <!-- ① ASDU 类型 -->
+              <DataTemplate DataType="vm:AsduTypesPageViewModel">
+                <Grid RowDefinitions="Auto,*" Margin="16,0,16,14">
+                  <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,*" Margin="0,0,0,8">
+                    <Button Grid.Column="0" Classes="subtle" Command="{Binding AddCommand}">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Path Data="{StaticResource IconPlus}" Width="12" Height="12" Stretch="Uniform"
+                              VerticalAlignment="Center" />
+                        <TextBlock Text="新增类型" VerticalAlignment="Center" />
+                      </StackPanel>
+                    </Button>
+                    <Button Grid.Column="1" Classes="subtle" Command="{Binding EditCommand}" Margin="8,0,0,0">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Path Data="{StaticResource IconEdit}" Width="12" Height="12" Stretch="Uniform"
+                              VerticalAlignment="Center" />
+                        <TextBlock Text="编辑" VerticalAlignment="Center" />
+                      </StackPanel>
+                    </Button>
+                    <Button Grid.Column="2" Classes="subtle danger" Command="{Binding RemoveCommand}" Margin="8,0,0,0">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Path Data="{StaticResource IconDelete}" Width="12" Height="12" Stretch="Uniform"
+                              VerticalAlignment="Center" />
+                        <TextBlock Text="删除" VerticalAlignment="Center" />
+                      </StackPanel>
+                    </Button>
+                    <TextBlock Grid.Column="3" Text="{Binding Summary}" Classes="hint"
+                               VerticalAlignment="Center" HorizontalAlignment="Right" />
+                  </Grid>
+
+                  <DataGrid Grid.Row="1" x:Name="AsduTypeGrid" Classes="settingsGrid"
+                            ItemsSource="{Binding Rows}"
+                            SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
+                            AutoGenerateColumns="False" IsReadOnly="True"
+                            LoadingRow="OnDataGridLoadingRow">
+                    <DataGrid.Columns>
+                      <DataGridTextColumn Header="类型号" Binding="{Binding TypeValue}" Width="70" />
+                      <DataGridTextColumn Header="规约代号" Binding="{Binding Code}" Width="130" />
+                      <DataGridTextColumn Header="中文名" Binding="{Binding DisplayName}" Width="*" />
+                      <DataGridTextColumn Header="分类" Binding="{Binding Category}" Width="70" />
+                      <DataGridTextColumn Header="来源" Binding="{Binding Source}" Width="70" />
+                      <DataGridTextColumn Header="编码格式" Binding="{Binding FormatText}" Width="180" />
+                      <DataGridTextColumn Header="时标" Binding="{Binding TimeTagText}" Width="140" />
+                    </DataGrid.Columns>
+                  </DataGrid>
+                </Grid>
+              </DataTemplate>
+
+              <!-- ② 视图：主界面默认怎么摆
+                   卡片式单选（参考主流设置界面）：每张卡片 = 标题 + 一句话，
+                   点整张卡片就是选中，不用先对准左边那个小圆点。
+                   卡片下面不再写解释段落——用户原话"这些文字不用展示，界面内容要简洁一些"；
+                   真需要"为什么这样设计"的地方，写在文档里，界面上不摆。 -->
+              <DataTemplate DataType="vm:ViewPageViewModel">
+                <StackPanel Margin="16,0,16,14" Spacing="20">
+
+                  <StackPanel>
+                    <TextBlock Text="侧边栏" Classes="sectionTitle" />
+                    <Grid ColumnDefinitions="*,12,*">
+                      <RadioButton Grid.Column="0" Classes="card" GroupName="SidebarViewMode"
+                                   IsChecked="{Binding SidebarListView, Mode=TwoWay}">
+                        <StackPanel>
+                          <TextBlock Text="只显示从站列表" Classes="cardTitle" />
+                          <TextBlock Text="{Binding SidebarListCaption}" Classes="cardDesc" />
+                        </StackPanel>
+                      </RadioButton>
+                      <RadioButton Grid.Column="2" Classes="card" GroupName="SidebarViewMode"
+                                   IsChecked="{Binding SidebarTableView, Mode=TwoWay}">
+                        <StackPanel>
+                          <TextBlock Text="通道 / 从站分开显示" Classes="cardTitle" />
+                          <TextBlock Text="{Binding SidebarTreeCaption}" Classes="cardDesc" />
+                        </StackPanel>
+                      </RadioButton>
+                    </Grid>
+                  </StackPanel>
+
+                  <StackPanel>
+                    <TextBlock Text="信号表格的标签分组" Classes="sectionTitle" />
+                    <Grid ColumnDefinitions="*,12,*">
+                      <RadioButton Grid.Column="0" Classes="card" GroupName="PointGroupMode"
+                                   IsChecked="{Binding GroupByAsduType, Mode=TwoWay}">
+                        <StackPanel>
+                          <TextBlock Text="按 ASDU 类型分组" Classes="cardTitle" />
+                          <TextBlock Text="{Binding GroupByTypeCaption}" Classes="cardDesc" />
+                        </StackPanel>
+                      </RadioButton>
+                      <RadioButton Grid.Column="2" Classes="card" GroupName="PointGroupMode"
+                                   IsChecked="{Binding GroupByCategory, Mode=TwoWay}">
+                        <StackPanel>
+                          <TextBlock Text="按电力大类分组" Classes="cardTitle" />
+                          <TextBlock Text="{Binding GroupByCategoryCaption}" Classes="cardDesc" />
+                        </StackPanel>
+                      </RadioButton>
+                    </Grid>
+                  </StackPanel>
+                </StackPanel>
+              </DataTemplate>
+
+              <!-- ②b 关于：软件信息 + 更新说明
+                   从主界面菜单栏「帮助 → 关于」挪进来的。分成两块：
+                   · 上半：这是什么、跑在什么环境（版本 / 构建 / 系统），外加"复制信息""项目主页"
+                   · 下半：更新说明，每个版本一行，点开看条目，当前版本默认展开
+                   信息行用 SelectableTextBlock：路径、构建 ID 这类值用户要复制出去。 -->
+              <DataTemplate DataType="vm:AboutPageViewModel">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                  <StackPanel Margin="16,0,16,16" Spacing="18">
+
+                    <!-- 头部：图标 + 名称 + 一句话 -->
+                    <StackPanel Orientation="Horizontal" Spacing="14">
+                      <Image Source="/Assets/app.png" Width="46" Height="46" VerticalAlignment="Top" />
+                      <StackPanel VerticalAlignment="Center" Spacing="3">
+                        <TextBlock Text="{Binding ProductName}" FontSize="18" FontWeight="Bold" />
+                        <TextBlock Text="{Binding Description}" Classes="hint" FontSize="11.5" />
+                      </StackPanel>
+                    </StackPanel>
+
+                    <!-- 信息表：两列排开，行数少的时候不至于拉成一长条 -->
+                    <ItemsControl ItemsSource="{Binding Rows}" x:Name="AboutInfoList">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <UniformGrid Columns="2" />
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Grid ColumnDefinitions="Auto,*" Margin="0,0,24,0">
+                            <TextBlock Grid.Column="0" Text="{Binding Label}" Classes="aboutLabel" />
+                            <SelectableTextBlock Grid.Column="1" Text="{Binding Value}"
+                                                 Classes="aboutValue" />
+                          </Grid>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Button Classes="subtle" Command="{Binding CopyCommand}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <Path Data="{StaticResource IconCopy}" Width="12" Height="12" Stretch="Uniform"
+                                VerticalAlignment="Center" />
+                          <TextBlock Text="复制信息" VerticalAlignment="Center" />
+                        </StackPanel>
+                      </Button>
+                      <Button Classes="subtle" Command="{Binding OpenRepositoryCommand}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <!-- Stretch 必须显式写：IconGitHub 是按 24 视框画的实心剪影，
+                               框缩到 12px 而 Stretch 默认 None 时图形不跟着缩，
+                               猫标会撑出布局框、直接压到"项目主页"的"项"字上。 -->
+                          <Path Data="{StaticResource IconGitHub}" Classes="filled" Width="12" Height="12"
+                                Stretch="Uniform" VerticalAlignment="Center" />
+                          <TextBlock Text="项目主页" VerticalAlignment="Center" />
+                        </StackPanel>
+                      </Button>
+                    </StackPanel>
+
+                    <!-- 更新说明 -->
+                    <StackPanel>
+                      <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0" Text="更新说明" Classes="sectionTitle"
+                                   Margin="0,0,0,6" />
+                        <TextBlock Grid.Column="1" Text="{Binding UpdateStatus}" Classes="hint"
+                                   FontSize="11" />
+                      </Grid>
+
+                      <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource BorderLineBrush}" />
+
+                      <ItemsControl ItemsSource="{Binding Releases}" x:Name="ReleaseNoteList">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate>
+                            <Border BorderThickness="0,0,0,1"
+                                    BorderBrush="{DynamicResource BorderLineBrush}">
+                              <StackPanel>
+                                <!-- 整行可点：折叠时只露版本 + 主题，展开才看条目 -->
+                                <Button Classes="releaseHeader" Command="{Binding ToggleCommand}">
+                                  <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto">
+                                    <Path Grid.Column="0" Width="8" Height="8" Stretch="Uniform"
+                                          VerticalAlignment="Center" Margin="0,0,8,0"
+                                          Data="M6 4l4 4-4 4" IsVisible="{Binding ChevronCollapsed}"
+                                          Stroke="{DynamicResource TextSecondaryBrush}"
+                                          StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" />
+                                    <Path Grid.Column="0" Width="8" Height="8" Stretch="Uniform"
+                                          VerticalAlignment="Center" Margin="0,0,8,0"
+                                          Data="M4 6l4 4 4-4" IsVisible="{Binding ChevronExpanded}"
+                                          Stroke="{DynamicResource TextSecondaryBrush}"
+                                          StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" />
+                                    <TextBlock Grid.Column="1" Text="{Binding VersionText}"
+                                               FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="2" Text="{Binding Title}" Margin="10,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                    <TextBlock Grid.Column="3" Text="{Binding DateText}" Classes="hint"
+                                               FontSize="11" HorizontalAlignment="Right"
+                                               VerticalAlignment="Center" Margin="0,0,12,0" />
+                                    <!-- 当前版本挂一颗小胶囊，跟其它版本一眼分开 -->
+                                    <Border Grid.Column="4" CornerRadius="8" Padding="7,1"
+                                            VerticalAlignment="Center"
+                                            Background="{DynamicResource PrimarySoftBrush}"
+                                            IsVisible="{Binding IsCurrent}">
+                                      <TextBlock Text="当前版本" FontSize="10"
+                                                 Foreground="{DynamicResource PrimarySoftTextBrush}" />
+                                    </Border>
+                                  </Grid>
+                                </Button>
+
+                                <StackPanel Margin="22,0,10,10" Spacing="5"
+                                            IsVisible="{Binding IsExpanded}">
+                                  <ItemsControl ItemsSource="{Binding Items}">
+                                    <ItemsControl.ItemTemplate>
+                                      <DataTemplate>
+                                        <Grid ColumnDefinitions="Auto,*" Margin="0,1">
+                                          <Ellipse Grid.Column="0" Width="3" Height="3"
+                                                   Fill="{DynamicResource TextDisabledBrush}"
+                                                   VerticalAlignment="Top" Margin="0,7,8,0" />
+                                          <TextBlock Grid.Column="1" Text="{Binding}"
+                                                     TextWrapping="Wrap" FontSize="11.5"
+                                                     Foreground="{DynamicResource TextSecondaryBrush}" />
+                                        </Grid>
+                                      </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                  </ItemsControl>
+                                </StackPanel>
+                              </StackPanel>
+                            </Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
+                  </StackPanel>
+                </ScrollViewer>
+              </DataTemplate>
+
+              <!-- ③ 报文监视 -->
+              <!-- ③ 报文监视 -->
+              <DataTemplate DataType="vm:TrafficPageViewModel">
+                <StackPanel Margin="16,0,16,14" Spacing="10">
+                  <Grid ColumnDefinitions="110,Auto,*" VerticalAlignment="Center">
+                    <TextBlock Grid.Column="0" Text="缓冲上限" VerticalAlignment="Center" />
+                    <NumericUpDown Grid.Column="1" Width="150"
+                                   Value="{Binding BufferLimit, Mode=TwoWay}"
+                                   Minimum="500" Maximum="50000" Increment="500"
+                                   FormatString="0" />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="14,0,0,0"
+                                VerticalAlignment="Center">
+                      <Button Classes="subtle" Command="{Binding UsePresetCommand}" CommandParameter="3000"
+                              Content="3000" />
+                      <Button Classes="subtle" Command="{Binding UsePresetCommand}" CommandParameter="10000"
+                              Content="1 万" />
+                      <Button Classes="subtle" Command="{Binding UsePresetCommand}" CommandParameter="30000"
+                              Content="3 万" />
+                    </StackPanel>
+                  </Grid>
+                  <TextBlock Text="{Binding Hint}" Classes="hint" TextWrapping="Wrap" MaxWidth="760"
+                             HorizontalAlignment="Left" />
+                </StackPanel>
+              </DataTemplate>
+
+              <!-- ④ 存储 -->
+              <DataTemplate DataType="vm:StoragePageViewModel">
+                <StackPanel Margin="16,0,16,14" Spacing="10">
+                  <TextBlock Text="设置文件" FontWeight="SemiBold"
+                             Foreground="{DynamicResource PrimaryBrush}" />
+                  <TextBox Text="{Binding FilePath}" IsReadOnly="True" FontFamily="Consolas, monospace"
+                           FontSize="11" />
+                  <TextBlock Text="{Binding FileStateText}" Classes="hint" />
+
+                  <!-- 位置说明：搬过家（旧版在 %APPDATA%）或 exe 目录只读回退了才出现。
+                       这两件事都不该让用户自己猜，尤其是后者——改完设置重启全丢、
+                       界面上又没动静，是最难解释的一类故障。 -->
+                  <TextBlock Text="{Binding LocationNote}" IsVisible="{Binding HasLocationNote}"
+                             Classes="hint" TextWrapping="Wrap" MaxWidth="760"
+                             HorizontalAlignment="Left" />
+
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="subtle" Command="{Binding OpenFolderCommand}">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Path Data="{StaticResource IconFolderOpen}" Width="12" Height="12" Stretch="Uniform"
+                              VerticalAlignment="Center" />
+                        <TextBlock Text="打开所在文件夹" VerticalAlignment="Center" />
+                      </StackPanel>
+                    </Button>
+                    <Button Classes="subtle danger" Command="{Binding ResetCommand}">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Path Data="{StaticResource IconDelete}" Width="12" Height="12" Stretch="Uniform"
+                              VerticalAlignment="Center" />
+                        <TextBlock Text="恢复默认设置" VerticalAlignment="Center" />
+                      </StackPanel>
+                    </Button>
+                  </StackPanel>
+
+                  <!-- 没出错就整行不占位。"（无错误）"这种话只在开发时有用，
+                       对用户来说是一行永远在那儿、永远没信息的噪音 -->
+                  <TextBlock Text="{Binding LastError}" IsVisible="{Binding HasError}"
+                             Foreground="{DynamicResource DangerTextBrush}" Classes="hint"
+                             TextWrapping="Wrap" />
+                </StackPanel>
+              </DataTemplate>
+
+            </ContentControl.DataTemplates>
+          </ContentControl>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</Window>

@@ -1,0 +1,121 @@
+﻿<views:DialogWindow xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:IEC104.App.Views"
+        xmlns:infra="clr-namespace:IEC104.App.Infrastructure"
+        x:Class="IEC104.App.Views.BatchChangeWindow"
+        Title="批量变化数据点"
+        Icon="/Assets/app.ico"
+        Width="980" Height="680"
+        WindowStartupLocation="CenterOwner">
+
+  <Window.Resources>
+    <infra:ChangePatternNameConverter x:Key="PatternName" />
+  </Window.Resources>
+
+  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="14">
+
+    <!-- 参数区 -->
+    <Border Grid.Row="0" Classes="panel" Padding="12,10">
+      <StackPanel Spacing="10">
+
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <TextBlock Text="变化方式" VerticalAlignment="Center" />
+          <ComboBox ItemsSource="{Binding Patterns}" SelectedItem="{Binding Pattern, Mode=TwoWay}"
+                    Width="130" VerticalAlignment="Center">
+            <ComboBox.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding Converter={StaticResource PatternName}}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+
+          <!-- 随机范围 -->
+          <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsRangeMode}"
+                      VerticalAlignment="Center">
+            <TextBlock Text="下限" VerticalAlignment="Center" />
+            <NumericUpDown Value="{Binding Min, Mode=TwoWay}" Width="120"
+                           Minimum="-1000000" Maximum="1000000" Increment="1" FormatString="0.###" />
+            <TextBlock Text="上限" VerticalAlignment="Center" />
+            <NumericUpDown Value="{Binding Max, Mode=TwoWay}" Width="120"
+                           Minimum="-1000000" Maximum="1000000" Increment="1" FormatString="0.###" />
+          </StackPanel>
+
+          <!-- 固定步长 -->
+          <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsStepMode}"
+                      VerticalAlignment="Center">
+            <TextBlock Text="每次步长" VerticalAlignment="Center" />
+            <NumericUpDown Value="{Binding Step, Mode=TwoWay}" Width="120"
+                           Minimum="-1000000" Maximum="1000000" Increment="1" FormatString="0.###" />
+            <TextBlock Text="下限" VerticalAlignment="Center" />
+            <NumericUpDown Value="{Binding Min, Mode=TwoWay}" Width="110"
+                           Minimum="-1000000" Maximum="1000000" Increment="1" FormatString="0.###" />
+            <TextBlock Text="上限" VerticalAlignment="Center" />
+            <NumericUpDown Value="{Binding Max, Mode=TwoWay}" Width="110"
+                           Minimum="-1000000" Maximum="1000000" Increment="1" FormatString="0.###" />
+          </StackPanel>
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <TextBlock Text="间隔(ms)" VerticalAlignment="Center" />
+          <NumericUpDown Value="{Binding IntervalMs, Mode=TwoWay}" Width="120"
+                         Minimum="100" Maximum="60000" Increment="100" FormatString="0" />
+
+          <TextBlock Text="每轮变化点数" VerticalAlignment="Center" Margin="8,0,0,0" />
+          <NumericUpDown Value="{Binding BatchSize, Mode=TwoWay}" Width="120"
+                         Minimum="1" Maximum="100000" Increment="10" FormatString="0" />
+
+          <CheckBox Content="每轮全部变化" IsChecked="{Binding AllPoints, Mode=TwoWay}"
+                    VerticalAlignment="Center" Margin="8,0,0,0" />
+
+          <TextBlock Text="（间隔 1000 + 每轮 200 = 每秒变化 200 个点）" Classes="hint"
+                     VerticalAlignment="Center" />
+        </StackPanel>
+
+        <TextBlock Text="{Binding HintText}" Classes="hint" TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
+
+    <!-- 选择工具 -->
+    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,10,0,6">
+      <Button Content="全选" Click="OnSelectAllClick" />
+      <Button Content="全不选" Click="OnClearAllClick" />
+      <Button Content="反选" Click="OnInvertClick" />
+      <Rectangle Width="1" Height="18" Fill="{DynamicResource BorderLineBrush}" Margin="4,0" />
+      <Button Content="只选遥测" Click="OnSelectMeasuredClick" />
+      <Button Content="只选遥信" Click="OnSelectSwitchClick" />
+      <TextBlock Text="{Binding SelectionText}" VerticalAlignment="Center" Margin="10,0,0,0"
+                 Classes="hint" />
+    </StackPanel>
+
+    <Border Grid.Row="2" Classes="panel">
+      <DataGrid ItemsSource="{Binding Items}" AutoGenerateColumns="False"
+                CanUserSortColumns="False" CanUserReorderColumns="False">
+        <DataGrid.Columns>
+          <DataGridTemplateColumn Header="参与" Width="60">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate>
+                <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" Padding="0"
+                          MinWidth="24" Click="OnItemCheckClick" />
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTextColumn Header="点号" Binding="{Binding Point.ObjectAddress}" Width="90" IsReadOnly="True" />
+          <DataGridTextColumn Header="名称" Binding="{Binding Point.Name}" Width="*" IsReadOnly="True" />
+          <DataGridTextColumn Header="ASDU 类型" Binding="{Binding Point.TypeCode}" Width="130" IsReadOnly="True" />
+          <DataGridTextColumn Header="当前值" Binding="{Binding Point.ValueText}" Width="120" IsReadOnly="True" />
+          <DataGridTextColumn Header="变化时间" Binding="{Binding Point.LastChangedAtText}" Width="160" IsReadOnly="True" />
+        </DataGrid.Columns>
+      </DataGrid>
+    </Border>
+
+    <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,12,0,0">
+      <TextBlock Grid.Column="0" Text="{Binding StatusText}" Classes="hint"
+                 VerticalAlignment="Center" TextWrapping="Wrap" />
+      <Button Grid.Column="1" Content="开始变化" Width="100" Classes="primary"
+              Command="{Binding StartCommand}" Margin="0,0,8,0" />
+      <Button Grid.Column="2" Content="停止" Width="88"
+              Command="{Binding StopCommand}" Margin="0,0,8,0" />
+      <Button Grid.Column="3" Content="关闭" Width="88" Click="OnCloseClick" />
+    </Grid>
+  </Grid>
+</views:DialogWindow>

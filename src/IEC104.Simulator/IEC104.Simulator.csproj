@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    IEC104.Simulator —— 从站仿真业务层（复刻自 IEC104ServerSimulator 主程序集）
+
+    对应原实现的范围：
+    * SlaveStation            <- 从站对象（原 Model + ViewModel 的从站逻辑）
+    * Handlers/*              <- 总召 / 时钟同步 / 计数量召唤 应答处理器
+    * IoModels/DataPoint      <- 数据点（原每种 ASDU 类型一套 Model+ViewModel，此处收敛为一个配置驱动模型）
+
+    与原实现的关键差异：本工程【不含任何授权/激活校验】，
+    也不引用 Parse.dll / RestSharp / 任何网络授权组件。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>IEC104.Simulator</RootNamespace>
+    <AssemblyName>IEC104.Simulator</AssemblyName>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IEC104.Core\IEC104.Core.csproj" />
+  </ItemGroup>
+
+</Project>

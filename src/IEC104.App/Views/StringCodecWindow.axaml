@@ -1,0 +1,47 @@
+﻿<views:DialogWindow xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:IEC104.App.Views"
+        x:Class="IEC104.App.Views.StringCodecWindow"
+        Title="字符串编解码"
+        Icon="/Assets/app.ico"
+        Width="760" Height="540"
+        WindowStartupLocation="CenterOwner">
+
+  <!--
+    原布局把输入/输出框都写成固定 110 高，又嵌在 Auto 行里，
+    于是窗口下方留出一大片空白。改为单层网格：输出框用 * 撑满剩余高度。
+  -->
+  <Grid RowDefinitions="Auto,Auto,130,Auto,*,Auto" Margin="14">
+    <StackPanel Grid.Row="0" Spacing="6">
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <TextBlock Text="编码方式" VerticalAlignment="Center" />
+        <views:HintIcon Tip="用途：核对装置上送的字符串类信息（如装置名称、定值区名）的实际字节；或把抓到的字节还原成可读文本。Base64 / 十六进制 / URL 是通用编码，其余是字符集。" />
+        <ComboBox x:Name="EncodingBox" Width="180" SelectedIndex="1">
+          <ComboBoxItem Content="ASCII" />
+          <ComboBoxItem Content="UTF-8" />
+          <ComboBoxItem Content="GBK（GB2312）" />
+          <ComboBoxItem Content="Latin1（ISO-8859-1）" />
+          <ComboBoxItem Content="Base64" />
+          <ComboBoxItem Content="十六进制" />
+          <ComboBoxItem Content="URL（百分号编码）" />
+        </ComboBox>
+        <Button Content="文本 → 编码" Width="110" Click="OnEncodeClick" />
+        <Button Content="编码 → 文本" Width="110" Click="OnDecodeClick" />
+        <Button Content="清空" Width="70" Click="OnClearClick" />
+      </StackPanel>
+    </StackPanel>
+
+    <TextBlock Grid.Row="1" Text="输入" FontWeight="SemiBold" Margin="0,10,0,4" />
+    <TextBox Grid.Row="2" x:Name="InputBox" AcceptsReturn="True" TextWrapping="Wrap"
+             FontFamily="Consolas, monospace" />
+
+    <TextBlock Grid.Row="3" Text="输出" FontWeight="SemiBold" Margin="0,10,0,4" />
+    <TextBox Grid.Row="4" x:Name="OutputBox" IsReadOnly="True" AcceptsReturn="True"
+             TextWrapping="Wrap" FontFamily="Consolas, monospace" Background="#FAFBFC" />
+
+    <StackPanel Grid.Row="5" Spacing="2" Margin="0,6,0,0">
+      <TextBlock x:Name="StatusText" Classes="hint" />
+      <TextBlock x:Name="ByteInfo" Classes="hint" TextWrapping="Wrap" />
+    </StackPanel>
+  </Grid>
+</views:DialogWindow>

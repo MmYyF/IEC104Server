@@ -1,0 +1,54 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!--
+    Industrial Blue 主题
+    专业工业蓝：更冷的蓝灰，适合控制室强光环境。
+
+    本文件由 gen_themes.py 生成，各套主题的键集合必须完全一致（当前 6 套）。
+    新增主题：改脚本里的 THEMES 再重跑，别手改这里。
+  -->
+  <SolidColorBrush x:Key="AppBackgroundBrush" Color="#F3F6FA" />   <!-- 窗口底色（最底层） -->
+  <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />   <!-- 面板 / 卡片 / 表格行 -->
+  <SolidColorBrush x:Key="SurfaceAltBrush" Color="#EDF2F8" />   <!-- 次级面（表头、分组标题条） -->
+  <SolidColorBrush x:Key="ToolbarBrush" Color="#FFFFFF" />   <!-- 菜单栏 / 工具条 / 状态栏 -->
+  <SolidColorBrush x:Key="BorderLineBrush" Color="#DCE4EE" />   <!-- 分隔线、面板描边 -->
+  <SolidColorBrush x:Key="DividerBrush" Color="#E6EBF2" />   <!-- 更淡的分隔线 -->
+  <SolidColorBrush x:Key="TextPrimaryBrush" Color="#243247" />   <!-- 正文 -->
+  <SolidColorBrush x:Key="TextSecondaryBrush" Color="#56677D" />   <!-- 次要说明 / 表头 / 计数 -->
+  <SolidColorBrush x:Key="TextDisabledBrush" Color="#9AA6B2" />   <!-- 禁用 -->
+  <SolidColorBrush x:Key="MenuIconBrush" Color="#4B6A94" />   <!-- 菜单线条图标（次要色压向主色一档，抗锯齿后仍清楚） -->
+  <SolidColorBrush x:Key="PrimaryBrush" Color="#3170C8" />   <!-- 主色（强调、启动、选中边） -->
+  <SolidColorBrush x:Key="PrimaryHoverBrush" Color="#2860B0" />   <!-- 主色悬停 -->
+  <SolidColorBrush x:Key="PrimaryPressedBrush" Color="#204F93" />   <!-- 主色按下 -->
+  <SolidColorBrush x:Key="PrimarySoftBrush" Color="#DCE8F8" />   <!-- 主色浅底（选中块、悬停块、徽标底） -->
+  <SolidColorBrush x:Key="PrimarySoftTextBrush" Color="#1E4E8C" />   <!-- 浅底上的文字（必须与 PrimarySoft 对比足够） -->
+  <SolidColorBrush x:Key="OnPrimaryBrush" Color="#FFFFFF" />   <!-- 主色实心上的文字/图标 -->
+  <SolidColorBrush x:Key="HoverBrush" Color="#EEF3FA" />   <!-- 通用悬停底 -->
+  <SolidColorBrush x:Key="SelectionBrush" Color="#E4EDFC" />   <!-- 列表选中底 -->
+  <SolidColorBrush x:Key="SelectionTextBrush" Color="#1E4E8C" />   <!-- 列表选中文字 -->
+  <SolidColorBrush x:Key="RowHoverBrush" Color="#F2F6FC" />   <!-- 表格行悬停 -->
+  <SolidColorBrush x:Key="RowSelectedBrush" Color="#E4EDFC" />   <!-- 表格行选中 -->
+  <SolidColorBrush x:Key="RowTextBrush" Color="#243247" />   <!-- 表格行文字（悬停/选中后必须仍可读） -->
+  <SolidColorBrush x:Key="GridRowAltBrush" Color="#F6F9FD" />   <!-- 表格隔行底色 -->
+  <SolidColorBrush x:Key="SuccessBrush" Color="#16A36A" />   <!-- 正常 / 已连接 -->
+  <SolidColorBrush x:Key="SuccessSoftBrush" Color="#E2F7EC" />   <!-- 正常态浅底 -->
+  <SolidColorBrush x:Key="SuccessTextBrush" Color="#0B6B47" />   <!-- 正常态浅底上的文字 -->
+  <SolidColorBrush x:Key="WarningBrush" Color="#B77912" />   <!-- 警告 / 监听中 -->
+  <SolidColorBrush x:Key="WarningSoftBrush" Color="#FFF2D6" />   <!-- 警告态浅底 -->
+  <SolidColorBrush x:Key="WarningTextBrush" Color="#7A4E00" />   <!-- 警告态浅底上的文字 -->
+  <SolidColorBrush x:Key="DangerBrush" Color="#CC3A3A" />   <!-- 错误 / 停止 / 删除 -->
+  <SolidColorBrush x:Key="DangerSoftBrush" Color="#FCE8E8" />   <!-- 错误态浅底 -->
+  <SolidColorBrush x:Key="DangerTextBrush" Color="#A32020" />   <!-- 错误态浅底上的文字 -->
+  <SolidColorBrush x:Key="ValueOnBrush" Color="#0F7A52" />   <!-- 值：合 / 有电 -->
+  <SolidColorBrush x:Key="ValueOffBrush" Color="#64748B" />   <!-- 值：分 / 无电 -->
+  <SolidColorBrush x:Key="ValueMidBrush" Color="#94620E" />   <!-- 值：中间态 -->
+  <SolidColorBrush x:Key="ValueBadBrush" Color="#C0392B" />   <!-- 值：不确定 -->
+  <SolidColorBrush x:Key="ValueNeutralBrush" Color="#263746" />   <!-- 值：模拟量中性色 -->
+  <SolidColorBrush x:Key="QualityOkBgBrush" Color="#E2F7EC" />   <!-- 品质徽标：正常底 -->
+  <SolidColorBrush x:Key="QualityOkFgBrush" Color="#0B6B47" />   <!-- 品质徽标：正常字 -->
+  <SolidColorBrush x:Key="QualityWarnBgBrush" Color="#FFF2D6" />   <!-- 品质徽标：警告底 -->
+  <SolidColorBrush x:Key="QualityWarnFgBrush" Color="#7A4E00" />   <!-- 品质徽标：警告字 -->
+  <SolidColorBrush x:Key="QualityBadBgBrush" Color="#FCE8E8" />   <!-- 品质徽标：异常底 -->
+  <SolidColorBrush x:Key="QualityBadFgBrush" Color="#A32020" />   <!-- 品质徽标：异常字 -->
+</ResourceDictionary>

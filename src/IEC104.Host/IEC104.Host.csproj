@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    IEC104.Host —— 控制台宿主程序（本复刻版的运行入口）
+
+    作用：把 IEC104.Core（协议层）与 IEC104.Simulator（从站业务层）串起来，
+    启动一个监听 2404 端口的 104 从站模拟器。
+
+    与原实现的对应关系：
+      原程序是 Avalonia 11.3.6 的桌面 GUI 应用（IEC104ServerSimulator 主程序集 + Styles.Avalonia）。
+      复刻版用控制台替代 GUI —— 目的是把"协议与业务逻辑"从界面代码中剥离出来，
+      便于直接阅读、单测与在内网无图形环境下运行。
+      如需图形界面，可在本工程之上再叠加一层 Avalonia/WPF，业务层无需改动。
+
+    ════════════════════════════════════════════════════════════════
+     本工程【无任何激活 / 授权 / 联网校验】代码。
+     原程序启动时会走 Parse.dll 的 ActivateUtil 做在线激活，
+     并依赖授权服务器返回的服务端时间 GetServerTime。
+     复刻版直接启动即用，不联网、不限时、不校验设备指纹。
+    ════════════════════════════════════════════════════════════════
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>IEC104.Host</RootNamespace>
+    <!-- 产物名为 IEC104Simulator：对外发布时更直观，命名空间仍保持 IEC104.Host -->
+    <AssemblyName>IEC104Simulator</AssemblyName>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IEC104.Core\IEC104.Core.csproj" />
+    <ProjectReference Include="..\IEC104.Simulator\IEC104.Simulator.csproj" />
+  </ItemGroup>
+
+</Project>

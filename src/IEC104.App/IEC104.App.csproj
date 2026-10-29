@@ -1,0 +1,111 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    IEC104.App —— Avalonia 图形界面（复刻原程序的桌面端）
+
+    对应关系：
+      原程序 IEC104ServerSimulator.dll（6.1 MB，Avalonia 11.3.6 + SimpleTheme 浅色）
+      → 本工程用同样的 Avalonia 11.3.6 重建界面。
+
+    为什么必须重写而不是反编译复用：
+      原程序把 axaml 编译进了 IL（Avalonia 的 XamlIl 编译器），
+      程序集内 !AvaloniaResources 只含 16 个字体 + 5 张图片 + 窗口图标，
+      没有任何 .axaml 原文，因此界面只能按功能重建。
+
+    可复用的原版资产（已从 !AvaloniaResources 提取）：
+      Assets/logo.png、logo.ico、bk.png
+
+    ════════════════════════════════════════════════════════════
+     本工程【不含任何激活 / 授权 / 联网校验】。
+     原程序启动时的 LicenseManagementWindow + Parse.dll 在线激活，
+     在复刻版中完全不存在。
+    ════════════════════════════════════════════════════════════
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>IEC104.App</RootNamespace>
+    <AssemblyName>IEC104Simulator</AssemblyName>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+    <!-- 第十一轮：图标重做 / 软件改名 IEC104-Server，版本号跟着走
+         1.7.4：点表标签可切"按 ASDU 类型 / 按电力大类"，点号表头标出十进制
+         1.7.7：工具条 11 颗图标按标题栏那排图标的风格与墨色重画
+         1.7.8：标题栏左侧那 7 颗菜单图标也换成同一个墨色（1.7.7 改错了地方）
+         1.7.9：新增主题 F「纯白清新绿」（六套主题）
+         1.8.0：分类口径回到电网叫法（档位归遥控、累计量归遥脉、比特串归其他）；
+                自定义 ASDU 类型可手填 1..255 的类型号；按钮圆角统一
+         1.8.1：设置/主题/崩溃日志默认存到 exe 同目录（便携），只读时回退 %APPDATA%
+         1.8.2：主题选择并进 settings.json，不再单独存 theme.txt
+         1.9.0：侧边栏双视图（默认只显示从站，标签带 IP:端口 与三态配色、双击改端点）；
+                新建从站默认连通道一起建；视图切换按钮移到侧栏底部并驱动顶部新建按钮；
+                设置新增「视图」页（侧边栏默认视图 + 点表标签默认分组）
+         1.9.1：设置改卡片式选项、视图页置顶；侧栏底部合成一条圆角切换按钮；
+                「帮助 → 关于」移进设置左栏最下面（版本 / 构建 / 运行时 + 更新说明）
+         1.9.2：链路参数新增三项报文长度（传送原因 1~2B / 公共地址 1~2B / 信息体地址 1~3B），
+                收发两侧共用同一份参数；长度装不下地址时在启动处就拦住；
+                直接建从站时可选用 104 / 101 规约；报文解析器可按任意宽度解报文
+         1.9.3：链路参数与报文长度抽成一个可复用面板，通道配置 / 联合建从站 /
+                双击从站标签 / 批量建从站 四处都能改（批量那处整批统一）
+         1.9.4：所有弹窗按屏幕工作区自动收尺寸，内容可滚、底部按钮固定（小屏能配完）；
+                输入控件统一 6px 圆角；成段说明收进标题旁的「?」悬停提示；
+                界面设计规范落盘到 docs/界面设计规范.md
+         1.9.5：「?」改为实心圆图标（18×18，主色底反白字）；
+                下拉列表弹出层同样 6px 圆角，选中项改用主题色；
+                弹窗位置一并夹进工作区，标题栏不再被推到屏幕外
+         1.9.6：「?」的悬停提示改为多行（TextBlock + Wrap + MaxWidth 300），
+                裸字符串交给 ToolTip 会按单行显示、右边被截；
+         1.9.7：内存优化。点位对象瘦身（不再与协议层各存一份、去掉逐点委托），
+                铺点前预留字典/数组容量，工作区改流式读写不再整份物化字符串。
+                100 万点：托管 480→289 MB、进程私有 875→656 MB、
+                保存 1.18s/253MB→0.26s/63MB、载入 2.59s→1.51s
+         1.9.8：常用动作搬到一层。「实时曲线」进工具条，「通信报文监视」本就在工具条；
+                清空报文与日志挪到监视面板右上角（垃圾桶），面板另加收起/展开；
+                窗口置顶从视图菜单挪到标题栏设置按钮后面的钉子，点一下即固定
+         1.9.9：按用户反馈再收一版。「实时曲线」「通信报文监视」移进「工具」菜单，
+                工具条撤掉实时曲线（省一格宽度）；「视图」整条菜单删除（三项都另有入口）；
+                监视面板右上角两颗按钮改为与标题带垂直居中 -->
+    <Version>1.9.9</Version>
+    <FileVersion>1.9.9.0</FileVersion>
+    <Product>IEC104-Server</Product>
+    <AssemblyTitle>IEC104-Server</AssemblyTitle>
+    <Description>IEC 60870-5-101/104 从站仿真工具</Description>
+    <Company>IEC104 Simulator</Company>
+    <!-- exe 在资源管理器里的图标：不写这行，编译出来的 exe 用的是 .NET 默认图标，
+         窗口图标再对也没用（用户说的"显示的还是 windows 原始那样"也包括这一处） -->
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <!--
+    ════════════════════════════════════════════════════════════════════════
+     1.9.7 内存优化：试过但没有保留的运行时开关（留个记录，免得再试一遍）
+
+     试过 System.GC.Concurrent=false + System.GC.ConserveMemory=5，
+     空载工作集 232.7 → 238.1 MB，落在测量噪声里，托管堆始终是 12.9 MB —— 
+     说明空载那 200 多 MB 不在 GC 手里，而在 .NET 运行时本体、Avalonia 的
+     native 库（SkiaSharp / GL）和渲染后台缓冲。既然拿不到收益，
+     就不留这两行配置：它们会增加 GC 的 STW 停顿，属于"付了代价没换到东西"。
+     ════════════════════════════════════════════════════════════════════════
+  -->
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.6" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.6" />
+    <PackageReference Include="Avalonia.Themes.Simple" Version="11.3.6" />
+    <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.3.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IEC104.Core\IEC104.Core.csproj" />
+    <ProjectReference Include="..\IEC104.Simulator\IEC104.Simulator.csproj" />
+  </ItemGroup>
+
+</Project>

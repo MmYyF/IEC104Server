@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="IEC104.App.Views.HintIcon"
+             Width="18" Height="18" VerticalAlignment="Center">
+
+  <!--
+    一个实心圆问号：鼠标悬停显示说明，界面上不占地方。
+
+    为什么不用 Button + 样式画：试过，Button.hintIcon 这组 Setter 对 HintIcon
+    （Button 的派生类）不生效 —— 运行期读出来 Width 是 NaN、CornerRadius 是 0，
+    等于样式压根没匹配上。外形靠样式猜是靠不住的，这里直接用一个 Border 画死，
+    尺寸、圆角、配色全部可见可查，不会再出现"改了样式却没反应"。
+
+    配色走语义令牌：主色实心圆 + OnPrimary 反白问号，六套主题各自成立。
+  -->
+  <UserControl.Styles>
+    <Style Selector="Border#HintDot">
+      <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
+    </Style>
+    <Style Selector="Border#HintDot:pointerover">
+      <Setter Property="Background" Value="{DynamicResource PrimaryHoverBrush}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Border Name="HintDot" Width="18" Height="18" CornerRadius="9"
+          Background="{DynamicResource PrimaryBrush}" Cursor="Help">
+    <TextBlock Text="?" FontSize="12" FontWeight="Bold"
+               Foreground="{DynamicResource OnPrimaryBrush}"
+               HorizontalAlignment="Center" VerticalAlignment="Center" />
+  </Border>
+</UserControl>

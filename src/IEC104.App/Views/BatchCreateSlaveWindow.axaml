@@ -1,0 +1,126 @@
+﻿<views:DialogWindow xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:IEC104.App.Views"
+        x:Class="IEC104.App.Views.BatchCreateSlaveWindow"
+        Title="批量创建从站"
+        Icon="/Assets/app.ico"
+        Width="780" SizeToContent="Height" MaxHeight="900" MinHeight="520"
+        WindowStartupLocation="CenterOwner">
+
+  <!-- 整体可滚动，按钮固定在最底一行。
+       小屏（720 逻辑高）上三块卡片加预览合起来比窗口高，
+       不套 ScrollViewer 就会把"全部创建"顶到屏幕外；
+       预览表改成固定高度，是为了不让 StackPanel 的无限高度把 DataGrid 撑成几千像素。 -->
+  <Grid RowDefinitions="*,Auto" Margin="16">
+
+    <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Spacing="10">
+
+    <!-- 参数区 -->
+    <Border Classes="panel" Padding="12">
+      <StackPanel Spacing="10">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="地址分配" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}"
+                     VerticalAlignment="Center" />
+          <views:HintIcon Tip="IP 按步长逐个递增，末段超 255 自动进位。端口步长 0 表示所有通道共用同一端口。名称模板占位符：{n} 序号、{ip}、{port}、{ca} 公共地址。" />
+        </StackPanel>
+
+        <Grid ColumnDefinitions="Auto,110,Auto,90,Auto,90,Auto,90" RowDefinitions="Auto">
+          <TextBlock Grid.Column="0" Text="起始 IP" VerticalAlignment="Center" Margin="0,0,8,0" />
+          <TextBox Grid.Column="1" Text="{Binding StartIp, Mode=TwoWay}" Margin="0,0,14,0" />
+
+          <TextBlock Grid.Column="2" Text="步长" VerticalAlignment="Center" Margin="0,0,8,0" />
+          <NumericUpDown Grid.Column="3" Value="{Binding IpStep, Mode=TwoWay}"
+                         Minimum="1" Maximum="65535" Increment="1" FormatString="0" Margin="0,0,14,0" />
+
+          <TextBlock Grid.Column="4" Text="数量" VerticalAlignment="Center" Margin="0,0,8,0" />
+          <NumericUpDown Grid.Column="5" Value="{Binding Count, Mode=TwoWay}"
+                         Minimum="1" Maximum="500" Increment="1" FormatString="0" Margin="0,0,14,0" />
+
+          <TextBlock Grid.Column="6" Text="起始端口" VerticalAlignment="Center" Margin="0,0,8,0" />
+          <NumericUpDown Grid.Column="7" Value="{Binding StartPort, Mode=TwoWay}"
+                         Minimum="1" Maximum="65535" Increment="1" FormatString="0" />
+        </Grid>
+
+        <Grid ColumnDefinitions="Auto,90,Auto,90,Auto,90,Auto,*" RowDefinitions="Auto">
+          <TextBlock Grid.Column="0" Text="端口步长" VerticalAlignment="Center" Margin="0,0,8,0" />
+          <NumericUpDown Grid.Column="1" Value="{Binding PortStep, Mode=TwoWay}"
+                         Minimum="0" Maximum="65535" Increment="1" FormatString="0" Margin="0,0,14,0" />
+
+          <TextBlock Grid.Column="2" Text="起始地址" VerticalAlignment="Center" Margin="0,0,8,0" />
+          <NumericUpDown Grid.Column="3" Value="{Binding StartCommonAddress, Mode=TwoWay}"
+                         Minimum="1" Maximum="65535" Increment="1" FormatString="0" Margin="0,0,14,0" />
+
+          <TextBlock Grid.Column="4" Text="地址步长" VerticalAlignment="Center" Margin="0,0,8,0" />
+          <NumericUpDown Grid.Column="5" Value="{Binding AddressStep, Mode=TwoWay}"
+                         Minimum="0" Maximum="65535" Increment="1" FormatString="0" Margin="0,0,14,0" />
+
+          <CheckBox Grid.Column="6" Grid.ColumnSpan="2" Content="遇到已占用的端口/IP 组合时跳过"
+                    IsChecked="{Binding SkipConflicts, Mode=TwoWay}" VerticalAlignment="Center" />
+        </Grid>
+
+        <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto">
+          <TextBlock Grid.Column="0" Text="通道名模板" VerticalAlignment="Center" Margin="0,0,8,0" />
+          <TextBox Grid.Column="1" Text="{Binding ChannelNamePattern, Mode=TwoWay}" Margin="0,0,14,0" />
+
+          <TextBlock Grid.Column="2" Text="从站名模板" VerticalAlignment="Center" Margin="0,0,8,0" />
+          <TextBox Grid.Column="3" Text="{Binding SlaveNamePattern, Mode=TwoWay}" />
+        </Grid>
+      </StackPanel>
+    </Border>
+
+    <!-- 链路参数 + 报文长度：夹在"地址分配"和"预览"中间，
+         因为它决定了"这一批建出来的通道怎么收发"，属于创建前的参数，不是预览结果 -->
+    <Border Classes="panel" Padding="12">
+      <StackPanel Spacing="8">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="链路参数与报文长度" FontWeight="SemiBold"
+                     Foreground="{DynamicResource PrimaryBrush}" VerticalAlignment="Center" />
+          <views:HintIcon Tip="这一批建出来的通道统一套用下面这套参数。要单独调某一台，建好后双击那台从站的标签，在它自己的窗口里改。" />
+        </StackPanel>
+
+        <views:LinkParametersPanel x:Name="BatchLinkPanel" DataContext="{Binding Link}" />
+      </StackPanel>
+    </Border>
+
+    <!-- 预览 -->
+    <Border Classes="panel">
+      <Grid RowDefinitions="Auto,*">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="10,8">
+          <TextBlock Grid.Column="0" Text="预览（每个从站独占一条通道）" FontWeight="SemiBold" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="1" Text="{Binding SummaryText}" Classes="hint" VerticalAlignment="Center" />
+        </Grid>
+
+        <!-- 用 Min/MaxHeight 而不是固定 Height：
+             行少时表格只有几行高（固定 260 会在两行数据下面留一大片空背景），
+             行多时到 260 就自己滚，不会把窗口顶长。 -->
+        <DataGrid Grid.Row="1" ItemsSource="{Binding Preview}"
+                  AutoGenerateColumns="False" IsReadOnly="True"
+                  MinHeight="120" MaxHeight="260"
+                  CanUserSortColumns="False" GridLinesVisibility="Horizontal">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="#" Binding="{Binding Index}" Width="40" />
+            <DataGridTextColumn Header="通道名" Binding="{Binding ChannelName}" Width="130" />
+            <DataGridTextColumn Header="监听地址" Binding="{Binding EndPoint}" Width="160" />
+            <DataGridTextColumn Header="公共地址" Binding="{Binding CommonAddress}" Width="90" />
+            <DataGridTextColumn Header="从站名" Binding="{Binding SlaveName}" Width="130" />
+            <DataGridTextColumn Header="状态" Binding="{Binding StatusText}" Width="*" />
+          </DataGrid.Columns>
+        </DataGrid>
+      </Grid>
+    </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+
+    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+      <TextBlock Text="{Binding ErrorText}" Foreground="{DynamicResource DangerBrush}"
+                 TextWrapping="Wrap" MaxWidth="380" VerticalAlignment="Center"
+                 HorizontalAlignment="Left" Margin="0,0,12,0" />
+      <TextBlock x:Name="ResultText" Foreground="{DynamicResource PrimarySoftTextBrush}" VerticalAlignment="Center" Margin="0,0,12,0" />
+      <Button Content="取消" Width="88" Click="OnCancelClick" />
+      <Button Content="全部创建" Width="110" Classes="primary" Click="OnCreateClick" />
+    </StackPanel>
+  </Grid>
+</views:DialogWindow>

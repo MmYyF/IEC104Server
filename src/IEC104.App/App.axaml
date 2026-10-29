@@ -1,0 +1,19 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="IEC104.App.App"
+             RequestedThemeVariant="Light">
+
+  <!--
+    主题选择与原程序一致：Avalonia SimpleTheme + 浅色（Light）。
+    原程序 StaticValue / App 反编译确认：SimpleTheme + ThemeVariant.Light。
+    主色取自原版 logo 的橙红渐变（#FF5A1F）。
+  -->
+  <Application.Styles>
+    <SimpleTheme />
+    <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Simple.xaml" />
+    <!-- 相对路径会按“当前 XAML 所属程序集”解析；
+         注意本工程的 AssemblyName 是 IEC104Simulator 而非 IEC104.App，
+         写 avares://IEC104.App/... 会报 “Assembly not found” -->
+    <StyleInclude Source="/Styles/AppTheme.axaml" />
+  </Application.Styles>
+</Application>

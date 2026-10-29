@@ -1,0 +1,71 @@
+﻿<views:DialogWindow xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:IEC104.App.Views"
+        x:Class="IEC104.App.Views.FrameParserWindow"
+        Title="报文解析"
+        Icon="/Assets/app.ico"
+        Width="880" Height="620"
+        WindowStartupLocation="CenterOwner">
+
+  <!--
+    原布局把“报文标签 + 长串示例 + 填入示例按钮”塞在同一行，
+    窗口宽度不够时按钮会被挤出右边界（截图里“填入示例”被裁）。
+    这里把示例提示单独放一行并可换行，输入框固定高度，
+    剩余空间全部留给解析结果。
+  -->
+  <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*" Margin="14">
+
+    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,6">
+      <TextBlock Text="规约" VerticalAlignment="Center" />
+      <ComboBox x:Name="ProtocolBox" Width="140" SelectedIndex="0">
+        <ComboBoxItem Content="IEC 104" />
+        <ComboBoxItem Content="IEC 101" />
+      </ComboBox>
+
+      <!-- 三个地址/原因字段的宽度。抓到的报文若是按非默认宽度组装的，
+           这里必须调成一样，否则解析出来的每一层都会整体错位。 -->
+      <TextBlock Text="传送原因" VerticalAlignment="Center" Margin="6,0,0,0" />
+      <ComboBox x:Name="CotLengthBox" Width="74" SelectedIndex="1">
+        <ComboBoxItem Content="1 B" />
+        <ComboBoxItem Content="2 B" />
+      </ComboBox>
+
+      <TextBlock Text="公共地址" VerticalAlignment="Center" />
+      <ComboBox x:Name="CaLengthBox" Width="74" SelectedIndex="1">
+        <ComboBoxItem Content="1 B" />
+        <ComboBoxItem Content="2 B" />
+      </ComboBox>
+
+      <TextBlock Text="信息体地址" VerticalAlignment="Center" />
+      <ComboBox x:Name="IoaLengthBox" Width="74" SelectedIndex="2">
+        <ComboBoxItem Content="1 B" />
+        <ComboBoxItem Content="2 B" />
+        <ComboBoxItem Content="3 B" />
+      </ComboBox>
+
+      <Button Content="填入示例" Click="OnFillSampleClick" Margin="6,0,0,0" />
+    </StackPanel>
+
+    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
+      <TextBlock Text="报文（十六进制）" VerticalAlignment="Center" />
+      <TextBlock x:Name="SampleHint" Classes="hint" TextWrapping="Wrap" VerticalAlignment="Center"
+                 Text="示例：68 0E 00 00 00 00 64 01 06 00 01 00 00 00 00 00" />
+    </StackPanel>
+
+    <TextBox Grid.Row="2" x:Name="InputBox" AcceptsReturn="True" TextWrapping="Wrap"
+             Height="110" FontFamily="Consolas, monospace"
+             Watermark="在此粘贴报文，支持空格/换行/0x 前缀分隔" />
+
+    <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" Margin="0,8">
+      <Button Content="解析" Classes="primary" Width="96" Click="OnParseClick" />
+      <Button Content="清空" Width="80" Click="OnClearClick" />
+      <TextBlock x:Name="StatusText" VerticalAlignment="Center" Classes="hint" />
+    </StackPanel>
+
+    <TextBlock Grid.Row="4" Text="解析结果" FontWeight="SemiBold" Margin="0,4,0,6" />
+
+    <TextBox Grid.Row="5" x:Name="OutputBox" IsReadOnly="True" AcceptsReturn="True"
+             TextWrapping="NoWrap" FontFamily="Consolas, monospace" FontSize="12"
+             Background="#FAFBFC" />
+  </Grid>
+</views:DialogWindow>
