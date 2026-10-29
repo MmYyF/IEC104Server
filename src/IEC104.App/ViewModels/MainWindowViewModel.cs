@@ -1242,7 +1242,9 @@ namespace IEC104.App.ViewModels
                     ? ProjectStore.DefaultName
                     : _currentProjectName;
 
-                if (!HasProject && !_isProjectDirty && !_isValueDirty)
+                // 值脏不进这个判断：和状态栏那颗指示器保持一致——只看结构脏。
+                // 否则会出现"标题写着未命名工程、状态栏那格却不显示"的半截状态。
+                if (!HasProject && !_isProjectDirty)
                 {
                     return AppInfo.ProductName;
                 }
@@ -1255,10 +1257,15 @@ namespace IEC104.App.ViewModels
 
         /// <summary>
         /// 状态栏要不要显示"保存状态"。
-        /// 有工程文件、或者已经改了东西（含"未命名工程"）都算——后者恰恰更需要提示，
+        /// 有工程文件、或者结构上有改动（含"未命名工程"）都算——后者恰恰更需要提示，
         /// 因为它连落脚的文件都还没有。
+        ///
+        /// **值脏（只有信号值变了）不算**，这是刻意的：值脏每秒可能来几十次（40 万点跑起来时
+        /// 一直有人在动），让它点亮这格等于让指示器全程闪"未保存"，反而没人看。
+        /// 值本身是静默的——退出时必写，批次 C 的防抖也会中途落盘。
+        /// 想知道"值有没有存"，看悬停提示。
         /// </summary>
-        public bool ShowSaveState => HasProject || _isProjectDirty || _isValueDirty;
+        public bool ShowSaveState => HasProject || _isProjectDirty;
 
         /// <summary>状态栏右侧的保存状态文字</summary>
         public string SaveStateText
@@ -1312,9 +1319,15 @@ namespace IEC104.App.ViewModels
                     return $"点表有改动还没保存（Ctrl+S 保存到 {_currentProjectName}{ProjectStore.Extension}）";
                 }
 
+                // 值脏不点亮指示器（见 ShowSaveState 的说明），但也不能假装值已经存了。
+                // 只在这句悬停提示里说清楚——不占视觉，问到才说。
+                string suffix = _isValueDirty
+                    ? "\n信号值有变化，退出时自动写入（当前这一版文件里的值还是上次保存时的）"
+                    : string.Empty;
+
                 return _lastSavedAt.HasValue
-                    ? $"已保存到 {_currentProjectPath}\n{_lastSavedAt.Value:yyyy-MM-dd HH:mm:ss}"
-                    : $"已保存到 {_currentProjectPath}";
+                    ? $"已保存到 {_currentProjectPath}\n{_lastSavedAt.Value:yyyy-MM-dd HH:mm:ss}{suffix}"
+                    : $"已保存到 {_currentProjectPath}{suffix}";
             }
         }
 
@@ -1566,16 +1579,13 @@ namespace IEC104.App.ViewModels
 
             _isValueDirty = true;
 
-            // 值一改，"工程已保存：xxx" 就过期了。但这一路是每点变化都会来的热路径，
-            // 而清提示只可能发生在"上一次保存之后第一次改值"（脏了就直接 return 了），
-            // 所以这里多做一次字符串比较不会有性能问题。
-            ClearStaleSaveMessage();
-
+            // 这里**不**清"工程已保存：xxx"。值脏全程透明（决策 C）：指示器不亮、标题不挂 ●、
+            // 左边那行日志也不动——文件里确实还是上次保存的那一版结构，没说过谎。
+            // 值有没有落盘写在悬停提示里（见 SaveStateTip）。
             OnPropertyChanged(nameof(IsValueDirty));
-            OnPropertyChanged(nameof(ShowSaveState));
-            OnPropertyChanged(nameof(SaveStateText));
+            // ShowSaveState / SaveStateText / IsSaveIdle 都不依赖值脏，不用通知。
+            // 只有悬停提示要说多一句（"信号值有变化，退出时自动写入"）。
             OnPropertyChanged(nameof(SaveStateTip));
-            OnPropertyChanged(nameof(IsSaveIdle));
             OnPropertyChanged(nameof(CanSaveProject));
             OnPropertyChanged(nameof(SaveProjectTip));
             (SaveProjectCommand as RelayCommand)?.RaiseCanExecuteChanged();

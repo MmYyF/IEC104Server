@@ -4290,10 +4290,15 @@ namespace IEC104.App.Views
                 .FirstOrDefault(s => s.Points.Count > 0);
 
             // ───────── ① 点表 ASDU 列显示中文名 ─────────
-            string cellText = string.Empty;
-            string cellTip = string.Empty;
-            string expectedName = string.Empty;
-            string expectedCode = string.Empty;
+            // 原来写的是"模型里第一个点 vs 渲染出来的第一格"。这条会偶发红：
+            // 切完 SelectedSlave 之后 DataGrid 的行容器不一定已经重新实体化，
+            // 量到的第一格还是上一张点表的（2026-10-29 实跑撞到过一次：期望"双点信息"、
+            // 量到"步位置信息"，原样重跑又全绿——不是功能坏了，是断言在跟渲染赛跑）。
+            // 现在改成**逐行自证**：每个已实体化的行，格子上的中文名必须等于它自己
+            // 悬停代号查出来的名字。与行序无关，顺带覆盖到不止一行。
+            int asduRows = 0;
+            int asduBad = 0;
+            string asduBadDetail = string.Empty;
 
             if (slave != null && grid != null)
             {
@@ -4305,25 +4310,40 @@ namespace IEC104.App.Views
                 Dispatcher.UIThread.RunJobs();
                 WarmUpLayout(mainWindow);
 
-                PointViewModel sample = slave.Points.FirstOrDefault(point => point.Type != null);
-                if (sample != null)
+                foreach (TextBlock cell in grid.GetVisualDescendants()
+                             .OfType<TextBlock>()
+                             .Where(text => (text.Tag as string) == "asdu"))
                 {
-                    expectedName = sample.TypeName;
-                    expectedCode = sample.TypeCode;
-                    TextBlock cell = grid.GetVisualDescendants().OfType<TextBlock>()
-                        .FirstOrDefault(text => (text.Tag as string) == "asdu");
-                    cellText = cell?.Text ?? string.Empty;
-                    cellTip = cell == null ? string.Empty : ToolTip.GetTip(cell) as string ?? string.Empty;
+                    // 悬停提示形如 "M_DP_NA_1 · 遥信"，前半截就是规约代号
+                    string tip = ToolTip.GetTip(cell) as string ?? string.Empty;
+                    string code = tip.Split('·')[0].Trim();
+                    TypeDescriptor descriptor = TypeIdCatalog.AllTypes
+                        .FirstOrDefault(item => item.Code == code);
+                    if (descriptor == null)
+                    {
+                        continue;
+                    }
+
+                    asduRows++;
+
+                    // 两件事一起验：得是中文名（不是代号本身），而且和代号对得上
+                    if (cell.Text != descriptor.DisplayName || cell.Text == code)
+                    {
+                        asduBad++;
+                        if (asduBadDetail.Length == 0)
+                        {
+                            asduBadDetail = $"{code}→\"{cell.Text}\"（期望 {descriptor.DisplayName}）";
+                        }
+                    }
                 }
             }
 
-            bool columnOk = expectedName.Length > 0
-                && cellText == expectedName
-                && cellText != expectedCode
-                && cellTip.Contains(expectedCode, StringComparison.Ordinal);
-            Log(dir, $"asdu-column-chinese: 单元格=\"{cellText}\" 期望=\"{expectedName}\" "
-                + $"代号={expectedCode} 悬停含代号={cellTip.Contains(expectedCode, StringComparison.Ordinal)} "
-                + $"提示=\"{cellTip}\" => {(columnOk ? "PASS" : "FAIL")}");
+            bool columnOk = asduRows >= 2 && asduBad == 0;
+            Log(dir, $"asdu-column-chinese: 逐行核对={asduRows} 行 不符={asduBad} "
+                + (asduBadDetail.Length > 0
+                    ? $"首例 {asduBadDetail} "
+                    : "全部为中文名、悬停带代号 ")
+                + $"=> {(columnOk ? "PASS" : "FAIL")}");
 
             // ───────── ② 设置按钮：位置在"检查更新"右边 ─────────
             Button settingsButton = mainWindow.FindControl<Button>("SettingsButton");
@@ -5618,6 +5638,36 @@ namespace IEC104.App.Views
                     + $"胶囊底={dirtyBackground}(期望 {wantSoft}) 字色={dirtyForeground}(期望 {wantSoftText}) "
                     + $"半粗={dirtyWeight} 字=\"{dirtyCaption}\" 存后回到对勾={badgeBack} => "
                     + (dirtyBadge && badgeBack ? "PASS" : "FAIL"));
+
+                // ── ③c 值脏不点名（决策 C）：只改了信号值，指示器必须一动不动 ──
+                //     40 万点跑起来时值每秒变几十次，让这格跟着闪"未保存"就没人看它了。
+                //     值只在悬停提示里说一句"退出时自动写入"。
+                viewModel.MarkValueDirty();
+                Dispatcher.UIThread.RunJobs();
+
+                bool valueDotOff = badgeDot?.IsEffectivelyVisible != true;
+                bool valueCheckOn = checkGlyph?.IsEffectivelyVisible == true;
+                string valueCaption = badgeText?.Text;
+                string valueStatus = viewModel.StatusText;
+                bool valueTip = (viewModel.SaveStateTip ?? string.Empty).Contains("退出时自动写入");
+
+                bool valueSilent = viewModel.IsValueDirty
+                    && !viewModel.IsProjectDirty
+                    && valueDotOff
+                    && valueCheckOn
+                    && valueCaption != null
+                    && valueCaption.StartsWith("已保存", StringComparison.Ordinal)
+                    && valueStatus != null
+                    && valueStatus.StartsWith("工程已保存", StringComparison.Ordinal)
+                    && valueTip;
+
+                Log(dir, $"statusbar-value-dirty-silent: 值脏={viewModel.IsValueDirty} "
+                    + $"圆点={!valueDotOff} 对勾={valueCheckOn} 字=\"{valueCaption}\" "
+                    + $"左邻文字=\"{valueStatus}\" 提示含「退出时自动写入」={valueTip} => "
+                    + (valueSilent ? "PASS" : "FAIL"));
+
+                viewModel.ClearDirtyState();
+                Dispatcher.UIThread.RunJobs();
 
                 // ── ④ 初始值语义：SetValue 不许污染 InitValue；复位回到初始值 ──
                 SlaveViewModel slave = viewModel.Connections
