@@ -240,6 +240,10 @@ namespace IEC104.App.Views
             // （必须最后跑：它最后会关闭工程、清空通道与从站）
             await RunProjectSelfCheckAsync(dir, mainWindow, viewModel);
 
+            // 1.10.1 自动保存：防抖 / 闸门 / 开关边界 / 设置页「工程」
+            // （也放最后：它会建一份自己的工程，跑完再关掉）
+            await RunAutoSaveSelfCheckAsync(dir, mainWindow, viewModel);
+
             Log(dir, "done");
             Console.WriteLine("[ui-capture] done -> " + dir);
 
@@ -4417,14 +4421,15 @@ namespace IEC104.App.Views
                 + $"左侧栏宽={nav?.Bounds.Width:0.#} 内容区在右侧={sideBySide} "
                 + $"（开始时已开着={settingsWasOpen}） => {(openOk ? "PASS" : "FAIL")}");
 
-            // 左侧标签栏：四页，「视图」排第一（1.9.1 按用户要求提前），「关于」不在 Pages 里
-            // （它钉在左栏最下面单独一格，下面单独验）。
+            // 左侧标签栏：五页（1.10.1 加了「工程」），「视图」排第一（1.9.1 按用户要求提前），
+            // 「关于」不在 Pages 里（它钉在左栏最下面单独一格，下面单独验）。
             // 打开设置时选中的是第一页 —— 所以这里期望「视图」，不是「ASDU 类型」；
             // 后面那套 ASDU 断言靠紧跟的显式切页把当前页换成 ASDU 类型。
             bool navOk = nav != null
-                && viewModel.Settings.Pages.Count == 4
+                && viewModel.Settings.Pages.Count == 5
                 && viewModel.Settings.Pages[0].Title == "视图"
-                && viewModel.Settings.Pages[1].Title == "ASDU 类型"
+                && viewModel.Settings.Pages[1].Title == "工程"
+                && viewModel.Settings.Pages[2].Title == "ASDU 类型"
                 && viewModel.Settings.SelectedPage?.Title == "视图"
                 && !viewModel.Settings.IsAboutPageSelected;
             string navDetail = string.Join(" / ", viewModel.Settings.Pages.Select(page => page.Title));
@@ -5641,7 +5646,7 @@ namespace IEC104.App.Views
 
                 // ── ③c 值脏不点名（决策 C）：只改了信号值，指示器必须一动不动 ──
                 //     40 万点跑起来时值每秒变几十次，让这格跟着闪"未保存"就没人看它了。
-                //     值只在悬停提示里说一句"退出时自动写入"。
+                //     值只在悬停提示里说一句"停手 N 秒后自动写入"。
                 viewModel.MarkValueDirty();
                 Dispatcher.UIThread.RunJobs();
 
@@ -5649,7 +5654,7 @@ namespace IEC104.App.Views
                 bool valueCheckOn = checkGlyph?.IsEffectivelyVisible == true;
                 string valueCaption = badgeText?.Text;
                 string valueStatus = viewModel.StatusText;
-                bool valueTip = (viewModel.SaveStateTip ?? string.Empty).Contains("退出时自动写入");
+                bool valueTip = (viewModel.SaveStateTip ?? string.Empty).Contains("自动写入");
 
                 bool valueSilent = viewModel.IsValueDirty
                     && !viewModel.IsProjectDirty
@@ -5663,7 +5668,7 @@ namespace IEC104.App.Views
 
                 Log(dir, $"statusbar-value-dirty-silent: 值脏={viewModel.IsValueDirty} "
                     + $"圆点={!valueDotOff} 对勾={valueCheckOn} 字=\"{valueCaption}\" "
-                    + $"左邻文字=\"{valueStatus}\" 提示含「退出时自动写入」={valueTip} => "
+                    + $"左邻文字=\"{valueStatus}\" 提示含「自动写入」={valueTip} => "
                     + (valueSilent ? "PASS" : "FAIL"));
 
                 viewModel.ClearDirtyState();
@@ -5766,6 +5771,177 @@ namespace IEC104.App.Views
             catch (Exception exception)
             {
                 Log(dir, $"project-self-check: 异常 {exception.GetType().Name}: {exception.Message} => FAIL");
+            }
+        }
+
+        /// <summary>
+        /// 自检（1.10.1）：自动保存的防抖、闸门、开关边界。
+        ///
+        /// 为什么这些断言不能靠看截图：防抖是"时间上的行为"，
+        /// 界面上完全看不出来——文件到底写没写、写了几次，只能读 mtime 和计数器。
+        ///
+        /// 延迟不能真按 5 秒等（一轮会白等十几秒），所以把 DebounceOverrideMs 压到 300 ms；
+        /// 这也是延迟值从设置读、而不是写死在代码里的原因之一。
+        /// </summary>
+        private static async Task RunAutoSaveSelfCheckAsync(
+            string dir, Window mainWindow, MainWindowViewModel viewModel)
+        {
+            string workDir = Path.Combine(dir, "autosave");
+            System.IO.Directory.CreateDirectory(workDir);
+            string projectPath = Path.Combine(workDir, "自动保存自检.iec104proj");
+
+            bool originalAutoSave = AppSettingsStore.Current.AutoSaveEnabled;
+            int originalValueDelay = AppSettingsStore.Current.ValueSaveDelaySeconds;
+
+            try
+            {
+                // 起一份带示例信号的工程（24 个点），立刻落一次盘当基线
+                viewModel.CreateProject(projectPath, "自动保存自检", withSamplePoints: true);
+                Dispatcher.UIThread.RunJobs();
+
+                viewModel.DebounceOverrideMs = 300;
+                viewModel.MinGapOverrideMs = 0;
+
+                SlaveViewModel slave = viewModel.Connections
+                    .SelectMany(connection => connection.Slaves)
+                    .FirstOrDefault(candidate => candidate.Points.Count > 0);
+
+                // 挑一个测量值：双点/单点这类开关量的取值域只有 0/1，
+                // 拿来验"最后值落盘"容易和取整撞上
+                PointViewModel point = slave?.Points
+                    .FirstOrDefault(candidate => candidate.TypeCode != null
+                        && candidate.TypeCode.Contains("M_ME", StringComparison.Ordinal))
+                    ?? slave?.Points.FirstOrDefault();
+
+                if (point == null)
+                {
+                    Log(dir, "autosave-self-check: 没有可用的信号 => FAIL");
+                    return;
+                }
+
+                DateTime before = System.IO.File.GetLastWriteTime(projectPath);
+                int writesBefore = viewModel.ValueSaver.WriteCount;
+
+                // ── ① 变化过程中零写盘：20 次改值铺满 2 秒，延迟 300 ms 永远等不到"停手" ──
+                for (int index = 0; index < 20; index++)
+                {
+                    point.Value = 20 + index * 0.5;
+                    await Task.Delay(100);
+                }
+
+                bool quietWhileChanging = System.IO.File.GetLastWriteTime(projectPath) == before
+                    && viewModel.ValueSaver.WriteCount == writesBefore;
+
+                Log(dir, $"project-value-no-write-while-changing: 2 秒内改值 20 次 "
+                    + $"mtime 未变={System.IO.File.GetLastWriteTime(projectPath) == before} "
+                    + $"写盘次数={viewModel.ValueSaver.WriteCount}（期望 {writesBefore}） => "
+                    + (quietWhileChanging ? "PASS" : "FAIL"));
+
+                // ── ② 停手之后写一次，而且写的是最后那个值 ──
+                await Task.Delay(800);
+
+                string expected = point.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+                string json = System.IO.File.ReadAllText(projectPath);
+                bool wroteOnIdle = viewModel.ValueSaver.WriteCount == writesBefore + 1
+                    && !viewModel.IsValueDirty
+                    && System.IO.File.GetLastWriteTime(projectPath) > before;
+                bool lastValuePersisted = json.Contains("\"Value\": " + expected, StringComparison.Ordinal);
+
+                Log(dir, $"project-value-write-after-idle: 写盘次数 {writesBefore}→{viewModel.ValueSaver.WriteCount} "
+                    + $"值脏已清={!viewModel.IsValueDirty} 最后值={expected} 已落盘={lastValuePersisted} => "
+                    + (wroteOnIdle && lastValuePersisted ? "PASS" : "FAIL"));
+
+                // ── ③ 最小间隔闸门：刚写完盘，即使防抖到期也要先憋住 ──
+                //    防的是"连续微调十几个值，每次停手就写 200 ms"的手感问题。
+                //    这里先手动存一次把"上次写盘"的时刻钉死在现在：
+                //    否则上一段那次自动保存落在 800 ms 窗口里的哪一刻是浮动的，
+                //    闸门到底该挡不该挡就说不清了（第一版就是这么假红的）。
+                viewModel.SaveProject();
+                Dispatcher.UIThread.RunJobs();
+
+                int gateBase = viewModel.ValueSaver.WriteCount;
+                viewModel.MinGapOverrideMs = 1200;
+                point.Value = 31.5;
+
+                await Task.Delay(500);   // > 防抖 300，< 闸门 1200
+                bool heldByGate = viewModel.ValueSaver.WriteCount == gateBase;
+
+                await Task.Delay(900);   // 距上次写盘 1400ms > 闸门
+                bool releasedAfterGate = viewModel.ValueSaver.WriteCount == gateBase + 1;
+
+                Log(dir, $"project-min-save-interval: 闸门 1200ms 时 500ms 处写盘={!heldByGate} "
+                    + $"1400ms 处写盘={releasedAfterGate} 次数={viewModel.ValueSaver.WriteCount} => "
+                    + (heldByGate && releasedAfterGate ? "PASS" : "FAIL"));
+
+                // ── ④ 开关边界：关着时结构脏不写盘，打开后才写 ──
+                //    这条还顺带验"If 已经脏了再改一次，计时器要重新算"——
+                //    MarkStructureDirty 里的 Bump 必须在 early-return 之前，否则永远等不到这一次。
+                viewModel.MinGapOverrideMs = 0;
+                AppSettingsStore.Current.AutoSaveEnabled = false;
+
+                DateTime offBefore = System.IO.File.GetLastWriteTime(projectPath);
+                viewModel.MarkStructureDirty();
+                await Task.Delay(700);
+
+                bool offKeepsDirty = viewModel.IsProjectDirty
+                    && System.IO.File.GetLastWriteTime(projectPath) == offBefore;
+
+                AppSettingsStore.Current.AutoSaveEnabled = true;
+                viewModel.MarkStructureDirty();
+                await Task.Delay(700);
+
+                bool onWrites = !viewModel.IsProjectDirty
+                    && System.IO.File.GetLastWriteTime(projectPath) > offBefore;
+
+                Log(dir, $"project-auto-save-switch: 关闭时仍脏={offKeepsDirty} 打开后自动落盘={onWrites} => "
+                    + (offKeepsDirty && onWrites ? "PASS" : "FAIL"));
+
+                // ── ⑤ 设置页「工程」：页签在、改完落盘、可选档位齐全 ──
+                ProjectPageViewModel page = viewModel.Settings.ProjectPage;
+                List<int> options = page.DelayOptions.Select(option => option.Seconds).ToList();
+                bool optionSet = options.SequenceEqual(new[] { 3, 5, 10, 30 });
+
+                page.SelectedValueSaveDelay = page.DelayOptions.First(option => option.Seconds == 10);
+                bool delayInMemory = AppSettingsStore.Current.ValueSaveDelaySeconds == 10;
+                string settingsJson = System.IO.File.ReadAllText(AppSettingsStore.FilePath);
+                bool delayOnDisk = settingsJson.Contains("\"ValueSaveDelaySeconds\": 10", StringComparison.Ordinal);
+
+                // 顺手留一张设置页的图（这一页只有真切过去才渲染得出来）
+                viewModel.ToggleSettingsCommand.Execute(null);
+                viewModel.Settings.SelectedPage = page;
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(350);
+                Save(mainWindow, Path.Combine(dir, "44-设置-工程.png"));
+                viewModel.ToggleSettingsCommand.Execute(null);
+                Dispatcher.UIThread.RunJobs();
+
+                bool pageOk = page != null
+                    && page.Title == "工程"
+                    && viewModel.Settings.Pages.Contains(page)
+                    && optionSet
+                    && delayInMemory
+                    && delayOnDisk;
+
+                Log(dir, $"project-page-options: 页签=工程/在列表里={viewModel.Settings.Pages.Contains(page)} "
+                    + $"档位=[{string.Join(" / ", options)}] 内存={AppSettingsStore.Current.ValueSaveDelaySeconds}秒 "
+                    + $"落盘={delayOnDisk} => " + (pageOk ? "PASS" : "FAIL"));
+            }
+            catch (Exception exception)
+            {
+                Log(dir, $"autosave-self-check: 异常 {exception.GetType().Name}: {exception.Message} => FAIL");
+            }
+            finally
+            {
+                // 恢复现场：override 归零、开关与档位回到自检前的值，别把污染留给下一次运行
+                viewModel.DebounceOverrideMs = null;
+                viewModel.MinGapOverrideMs = null;
+                AppSettingsStore.Current.AutoSaveEnabled = originalAutoSave;
+                AppSettingsStore.Current.ValueSaveDelaySeconds = originalValueDelay;
+                AppSettingsStore.Save();
+
+                viewModel.ClearDirtyState();
+                viewModel.CloseProject();
+                Dispatcher.UIThread.RunJobs();
             }
         }
 

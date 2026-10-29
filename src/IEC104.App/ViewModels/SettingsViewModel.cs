@@ -57,16 +57,20 @@ namespace IEC104.App.ViewModels
         {
             AsduTypesPage = new AsduTypesPageViewModel(this);
             ViewPage = new ViewPageViewModel(this);
+            ProjectPage = new ProjectPageViewModel(this);
             TrafficPage = new TrafficPageViewModel(this);
             StoragePage = new StoragePageViewModel(this);
             AboutPage = new AboutPageViewModel(this);
 
             // 顺序 = 左侧标签栏从上到下的顺序。
             // "视图"排第一：它是这几页里唯一"改完马上看出区别"的，也是用户最常回来调的一项；
+            // "工程"紧跟其后：它管的是"改动什么时候落盘"，和"界面怎么摆"同属使用习惯，
+            // 都属于"进来调一次就不太再动"的那类；
             // "关于"不在 Pages 里——它钉在标签栏最下面单独一格（见 MainWindow.axaml）。
             Pages = new ObservableCollection<SettingsPageViewModel>
             {
                 ViewPage,
+                ProjectPage,
                 AsduTypesPage,
                 TrafficPage,
                 StoragePage
@@ -82,6 +86,9 @@ namespace IEC104.App.ViewModels
         public AsduTypesPageViewModel AsduTypesPage { get; }
 
         public ViewPageViewModel ViewPage { get; }
+
+        /// <summary>「工程」页：启动行为 + 自动保存 + 信号值落盘节奏</summary>
+        public ProjectPageViewModel ProjectPage { get; }
 
         public TrafficPageViewModel TrafficPage { get; }
 
@@ -566,6 +573,140 @@ namespace IEC104.App.ViewModels
         public string GroupByTypeCaption => "与报文里的 TypeID 一一对应";
 
         public string GroupByCategoryCaption => "遥测 / 遥信 / 遥控 / 遥脉";
+    }
+
+    /// <summary>
+    /// 设置页之二：工程（1.10.1）。
+    ///
+    /// 为什么这一页必须存在：改动什么时候落盘，是用户真的会问的问题——
+    /// "我改了一半它会不会自己存进去？""仿真跑着跑着会不会一直写盘把盘写满？"
+    /// 这些问题在界面上答，比在文档里答有用。
+    ///
+    /// 页面上两个开关的分工是刻意分开的：
+    ///   · 「自动保存」只管**结构/参数**改动（关掉就是"我改完自己按 Ctrl+S"）；
+    ///   · 信号值那条**没有开关**——它是"最后一次的值要留下来"的实现方式，
+    ///     关掉等于不存值，那不如不要这个功能。
+    /// </summary>
+    public sealed class ProjectPageViewModel : SettingsPageViewModel
+    {
+        public ProjectPageViewModel(SettingsViewModel owner) : base(owner)
+        {
+            // 主界面改了这些值（比如以后加的快捷开关），这一页要跟着变
+            AppSettingsStore.Changed += RaiseAll;
+        }
+
+        public override string Title => "工程";
+
+        public override string Subtitle => "改动什么时候写进工程文件。";
+
+        /// <summary>不显示页头说明：四个分组标题已经说清了，顶上再压一句是多余的</summary>
+        public override bool ShowSubtitle => false;
+
+        private void RaiseAll()
+        {
+            OnPropertyChanged(nameof(ShowWelcomeOnStartup));
+            OnPropertyChanged(nameof(AutoSaveEnabled));
+            OnPropertyChanged(nameof(IsAutoSaveDelayEnabled));
+            OnPropertyChanged(nameof(SelectedAutoSaveDelay));
+            OnPropertyChanged(nameof(SelectedValueSaveDelay));
+        }
+
+        private void Commit()
+        {
+            AppSettingsStore.Save();
+            AppSettingsStore.NotifyChanged();
+        }
+
+        // ── ① 启动行为 ──────────────────────────────────────────
+
+        /// <summary>启动时显示欢迎页（工程仍会自动恢复）</summary>
+        public bool ShowWelcomeOnStartup
+        {
+            get => AppSettingsStore.Current.ShowWelcomeOnStartup;
+            set
+            {
+                if (AppSettingsStore.Current.ShowWelcomeOnStartup == value)
+                {
+                    return;
+                }
+
+                AppSettingsStore.Current.ShowWelcomeOnStartup = value;
+                Commit();
+            }
+        }
+
+        // ── ② 自动保存（只控制结构/参数改动）────────────────────
+
+        /// <summary>自动保存结构改动</summary>
+        public bool AutoSaveEnabled
+        {
+            get => AppSettingsStore.Current.AutoSaveEnabled;
+            set
+            {
+                if (AppSettingsStore.Current.AutoSaveEnabled == value)
+                {
+                    return;
+                }
+
+                AppSettingsStore.Current.AutoSaveEnabled = value;
+                Commit();
+                OnPropertyChanged(nameof(IsAutoSaveDelayEnabled));
+            }
+        }
+
+        /// <summary>开关关着时那个下拉置灰——免得用户以为调了延迟就会开始自动存</summary>
+        public bool IsAutoSaveDelayEnabled => AppSettingsStore.Current.AutoSaveEnabled;
+
+        /// <summary>可选延迟。四个档位够用，不给任意输入：这是个手感项，不是精确参数</summary>
+        public IReadOnlyList<DelayOption> DelayOptions { get; } = new List<DelayOption>
+        {
+            new(3), new(5), new(10), new(30)
+        };
+
+        /// <summary>停止操作多久后保存（结构改动）</summary>
+        public DelayOption SelectedAutoSaveDelay
+        {
+            get => Find(AppSettingsStore.Current.AutoSaveDelaySeconds);
+            set
+            {
+                if (value == null || AppSettingsStore.Current.AutoSaveDelaySeconds == value.Seconds)
+                {
+                    return;
+                }
+
+                AppSettingsStore.Current.AutoSaveDelaySeconds = value.Seconds;
+                Commit();
+            }
+        }
+
+        /// <summary>值停止变化多久后保存（无开关）</summary>
+        public DelayOption SelectedValueSaveDelay
+        {
+            get => Find(AppSettingsStore.Current.ValueSaveDelaySeconds);
+            set
+            {
+                if (value == null || AppSettingsStore.Current.ValueSaveDelaySeconds == value.Seconds)
+                {
+                    return;
+                }
+
+                AppSettingsStore.Current.ValueSaveDelaySeconds = value.Seconds;
+                Commit();
+            }
+        }
+
+        private DelayOption Find(int seconds) =>
+            DelayOptions.FirstOrDefault(option => option.Seconds == seconds) ?? DelayOptions[1];
+    }
+
+    /// <summary>下拉里的一个延迟档位</summary>
+    public sealed class DelayOption
+    {
+        public DelayOption(int seconds) => Seconds = seconds;
+
+        public int Seconds { get; }
+
+        public string Label => $"{Seconds} 秒";
     }
 
     /// <summary>

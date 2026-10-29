@@ -1448,7 +1448,71 @@
                 </StackPanel>
               </DataTemplate>
 
-              <!-- ②b 关于：软件信息 + 更新说明
+              <!-- ②b 工程：改动什么时候落盘（1.10.1）
+                   两个开关的分工是刻意的：「自动保存」只管结构/参数，信号值那条没有开关——
+                   它是"最后一次的值要留下来"的实现方式，关掉等于不存值。
+                   页头不写导语，四个分组标题已经说清了。 -->
+              <DataTemplate DataType="vm:ProjectPageViewModel">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                  <StackPanel Margin="16,0,16,14" Spacing="20">
+
+                    <StackPanel Spacing="6">
+                      <TextBlock Text="启动" Classes="sectionTitle" />
+                      <CheckBox Content="启动时显示欢迎页"
+                                IsChecked="{Binding ShowWelcomeOnStartup, Mode=TwoWay}" />
+                      <TextBlock Classes="hint"
+                                 Text="关掉后启动直接进上次工程的点表。工程本身照样自动恢复。" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="6">
+                      <TextBlock Text="自动保存" Classes="sectionTitle" />
+                      <CheckBox Content="改动后自动保存工程"
+                                IsChecked="{Binding AutoSaveEnabled, Mode=TwoWay}" />
+                      <StackPanel Orientation="Horizontal" Spacing="8"
+                                  IsEnabled="{Binding IsAutoSaveDelayEnabled}">
+                        <TextBlock Text="停止操作后" VerticalAlignment="Center" />
+                        <ComboBox Width="96" ItemsSource="{Binding DelayOptions}"
+                                  SelectedItem="{Binding SelectedAutoSaveDelay, Mode=TwoWay}">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                              <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <TextBlock Text="保存" VerticalAlignment="Center" />
+                      </StackPanel>
+                      <TextBlock Classes="hint"
+                                 Text="只作用于结构和参数：建从站、改点号、改初始值。信号值不受这个开关控制。" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="6">
+                      <TextBlock Text="信号值" Classes="sectionTitle" />
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="值停止变化" VerticalAlignment="Center" />
+                        <ComboBox Width="96" ItemsSource="{Binding DelayOptions}"
+                                  SelectedItem="{Binding SelectedValueSaveDelay, Mode=TwoWay}">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                              <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <TextBlock Text="后保存" VerticalAlignment="Center" />
+                      </StackPanel>
+                      <TextBlock Classes="hint"
+                                 Text="仿真过程中不写盘；停下来后自动保存界面上的最后值，退出时也会写一次。" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="6">
+                      <TextBlock Text="关闭保护" Classes="sectionTitle" />
+                      <TextBlock Classes="hint" TextWrapping="Wrap"
+                                 Text="退出时自动保存最后一次的值；有结构改动没保存会先问你。这一项固定开启。" />
+                    </StackPanel>
+                  </StackPanel>
+                </ScrollViewer>
+              </DataTemplate>
+
+              <!-- ②c 关于：软件信息 + 更新说明
                    从主界面菜单栏「帮助 → 关于」挪进来的。分成两块：
                    · 上半：这是什么、跑在什么环境（版本 / 构建 / 系统），外加"复制信息""项目主页"
                    · 下半：更新说明，每个版本一行，点开看条目，当前版本默认展开

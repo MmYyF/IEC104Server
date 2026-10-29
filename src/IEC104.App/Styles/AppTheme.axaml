@@ -732,6 +732,21 @@
     <Setter Property="FontWeight" Value="Normal" />
   </Style>
 
+  <!-- ── 复选框：勾选框跟随主题主色 ──────────────────────────
+       SimpleTheme 自带的勾是它自己的青色，六套主题的主色一个都不是那个色，
+       切主题时它也不变——这是全工具最后一块"颜色不跟主题走"的控件。
+       只改"框"和"勾"两处的色，三态、键盘、无障碍全部沿用原模板，不重写 Template
+       （重写模板的风险比改两个颜色大得多，而这一版不需要换形状）。 -->
+  <Style Selector="CheckBox:checked /template/ Border">
+    <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}" />
+  </Style>
+
+  <Style Selector="CheckBox:checked /template/ Path">
+    <Setter Property="Fill" Value="{DynamicResource OnPrimaryBrush}" />
+    <Setter Property="Stroke" Value="{DynamicResource OnPrimaryBrush}" />
+  </Style>
+
   <!-- ── 输入类控件：统一圆角 ──────────────────────────────────
        之前完全没定义 TextBox / ComboBox / NumericUpDown 的样式，
        它们一直走内置模板的直角边框，跟四周 8px 圆角的卡片放在一起像是拼错了。

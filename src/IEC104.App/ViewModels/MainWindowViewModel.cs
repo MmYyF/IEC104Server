@@ -98,6 +98,40 @@ namespace IEC104.App.ViewModels
         /// <summary>最近一次写盘时间，状态栏显示"已保存 09:42"用</summary>
         private DateTime? _lastSavedAt;
 
+        // ── 自动保存（1.10.1）──────────────────────────────────
+        //
+        // 两个脏源、两个调度器，而不是一个共用的：
+        //   · 结构脏 —— 受设置里的「自动保存」开关控制（关了就不在编辑过程中写盘，
+        //              免得用户改了一半的文件被悄悄落盘）。
+        //   · 值脏   —— 没有开关。这是"最后值要留下来"的实现方式，关掉就等于不存值。
+        // 共用一个调度器会让"关掉自动保存"连带把值也停了，这正是要避免的。
+
+        /// <summary>结构改动的防抖调度器（受「自动保存」开关控制）</summary>
+        private SaveScheduler _structureSave;
+
+        /// <summary>信号值变化的防抖调度器（无开关）</summary>
+        private SaveScheduler _valueSave;
+
+        /// <summary>
+        /// 自检专用：把防抖延迟压到毫秒级。**null = 走设置里的秒数**。
+        /// 自检不能真等 5 秒（一轮下来几十秒就白等了），
+        /// 也不能把设置项的下限改成能填 0.3 秒——用户不该看见那个值。
+        ///
+        /// 用可空而不是"0 表示不覆盖"：0 在这里是有意义的值（"零延迟"），
+        /// 混用会得到一个安静的错——自检设了 0 以为关了闸门，实际回落到设置里的 3 秒，
+        /// 于是"停手就写"的断言全红，而代码看着没毛病（第一版就是这么红的）。
+        /// </summary>
+        internal int? DebounceOverrideMs { get; set; }
+
+        /// <summary>自检专用：最小写盘间隔覆盖值。null = 走设置里的秒数，0 = 不设闸门</summary>
+        internal int? MinGapOverrideMs { get; set; }
+
+        /// <summary>自检专用：直接看结构脏的调度器（写了多少次、还欠不欠一次写）</summary>
+        internal SaveScheduler StructureSaver => _structureSave;
+
+        /// <summary>自检专用：直接看值脏的调度器</summary>
+        internal SaveScheduler ValueSaver => _valueSave;
+
         public MainWindowViewModel()
         {
             // 视图偏好要在建任何列表之前定下来：LoadSampleData 会选中首个从站、
@@ -106,6 +140,20 @@ namespace IEC104.App.ViewModels
             _groupPointsByCategory = AppSettingsStore.Current.PointsGroupByCategory;
 
             Connections.CollectionChanged += OnConnectionsChanged;
+
+            // 两个防抖调度器。延迟用委托而不是值：设置页改完立刻生效，
+            // 不用重建调度器（也不会有"改了设置但这一轮还是旧延迟"的错觉）。
+            _structureSave = new SaveScheduler(
+                "structure",
+                () => StructureDelayMs,
+                () => MinGapMs,
+                AutoSaveQuietly);
+
+            _valueSave = new SaveScheduler(
+                "value",
+                () => ValueDelayMs,
+                () => MinGapMs,
+                AutoSaveQuietly);
 
             // 命令
             CreateConnectionCommand = new RelayCommand(() => CreateConnection());
@@ -274,6 +322,7 @@ namespace IEC104.App.ViewModels
             _isValueDirty = false;
             _isWelcomeVisible = true;
 
+            StopAutoSave();
             RebuildSlaveRows();
             RefreshCommandStates();
         }
@@ -1322,12 +1371,95 @@ namespace IEC104.App.ViewModels
                 // 值脏不点亮指示器（见 ShowSaveState 的说明），但也不能假装值已经存了。
                 // 只在这句悬停提示里说清楚——不占视觉，问到才说。
                 string suffix = _isValueDirty
-                    ? "\n信号值有变化，退出时自动写入（当前这一版文件里的值还是上次保存时的）"
+                    ? $"\n信号值有变化，停手 {AppSettingsStore.Current.ValueSaveDelaySeconds} 秒后自动写入"
+                      + "（退出时也会写一次）"
                     : string.Empty;
 
                 return _lastSavedAt.HasValue
                     ? $"已保存到 {_currentProjectPath}\n{_lastSavedAt.Value:yyyy-MM-dd HH:mm:ss}{suffix}"
                     : $"已保存到 {_currentProjectPath}{suffix}";
+            }
+        }
+
+        // ── 自动保存（1.10.1）──────────────────────────────────
+
+        /// <summary>结构改动的防抖延迟：自检覆盖 > 设置 > 默认</summary>
+        private int StructureDelayMs => DebounceOverrideMs
+            ?? Math.Max(1, AppSettingsStore.Current.AutoSaveDelaySeconds) * 1000;
+
+        /// <summary>信号值的防抖延迟</summary>
+        private int ValueDelayMs => DebounceOverrideMs
+            ?? Math.Max(1, AppSettingsStore.Current.ValueSaveDelaySeconds) * 1000;
+
+        /// <summary>两次写盘之间的最小间隔</summary>
+        private int MinGapMs => MinGapOverrideMs
+            ?? Math.Max(0, AppSettingsStore.Current.MinSaveIntervalSeconds) * 1000;
+
+        /// <summary>
+        /// 结构改动了：能写就排队，不能写就什么都不做。
+        ///
+        /// 两种情况不排队：没有文件路径（写不了，排队只会排出一个失败）、
+        /// 「自动保存」关着（用户明确不想在编辑过程中落盘，等他自己按 Ctrl+S）。
+        /// </summary>
+        private void ScheduleStructureSave()
+        {
+            if (!HasProject || !AppSettingsStore.Current.AutoSaveEnabled)
+            {
+                return;
+            }
+
+            _structureSave?.Bump();
+        }
+
+        /// <summary>值变了：排队等停手。值这条没有开关——见字段上的说明</summary>
+        private void ScheduleValueSave()
+        {
+            if (!HasProject)
+            {
+                return;
+            }
+
+            _valueSave?.Bump();
+        }
+
+        /// <summary>
+        /// 停掉两个调度器。打开 / 新建 / 关闭工程时用：
+        /// 上一个工程欠着的那次写盘已经不属于新工程了，照写会把旧内容写进新文件。
+        /// </summary>
+        private void StopAutoSave()
+        {
+            _structureSave?.Stop();
+            _valueSave?.Stop();
+        }
+
+        /// <summary>
+        /// 防抖到期后的静默写盘。
+        ///
+        /// **不碰状态栏左边那行操作日志**：值每几秒落一次盘，要是每次都写一句
+        /// "工程已保存：xxx"，状态栏就成了刷屏日志，真正想看的提示全被冲走。
+        /// 写盘这件事在右边那颗指示器上体现（"正在保存…" → "已保存 HH:mm"），够了。
+        /// </summary>
+        private bool AutoSaveQuietly()
+        {
+            if (!HasProject)
+            {
+                return false;
+            }
+
+            try
+            {
+                SaveProjectTo(_currentProjectPath, _currentProjectName, quiet: true);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                // 原因必须说出来：写不进去（磁盘满 / 只读 / 被别的进程占着）时，
+                // 用户最需要知道的是"我改的东西现在还没落地"，而不是一个安静的界面。
+                // 同时停表——每 5 秒往一个写不进去的磁盘上打一次，只会让界面定期卡一下。
+                StatusText = $"自动保存失败：{exception.Message}";
+                _structureSave?.Stop();
+                _valueSave?.Stop();
+                return false;
             }
         }
 
@@ -1350,7 +1482,12 @@ namespace IEC104.App.ViewModels
         /// 写盘是同步的：1.9.7 已经把序列化做成流式，100 万点约 258 ms，
         /// 这个量级放在 UI 线程上可接受，换来的是"写完就是写完"这个确定的行为。
         /// </summary>
-        public bool SaveProjectTo(string path, string projectName)
+        /// <param name="quiet">
+        /// 静默写盘（自动保存用）：不往状态栏左边那行操作日志里写字。
+        /// 用户手动按 Ctrl+S 要看到"工程已保存：xxx"，自动保存每几秒来一次则不能刷屏。
+        /// 右边那颗指示器的"已保存 HH:mm"两种情况都会更新。
+        /// </param>
+        public bool SaveProjectTo(string path, string projectName, bool quiet = false)
         {
             if (string.IsNullOrEmpty(path))
             {
@@ -1382,8 +1519,18 @@ namespace IEC104.App.ViewModels
 
                 AppSettingsStore.RememberProject(_currentProjectPath, _currentProjectName);
 
-                _saveStatusMessage = $"工程已保存：{_currentProjectName}{System.IO.Path.GetExtension(path)}";
-                StatusText = _saveStatusMessage;
+                // 写过盘了：两个调度器的待写标记都清掉、闸门基准挪到现在。
+                // 不清的话，刚刚手动存完还会被防抖再写一次（同样的内容写两遍）。
+                _structureSave?.MarkWritten();
+                _valueSave?.MarkWritten();
+
+                if (!quiet)
+                {
+                    _saveStatusMessage =
+                        $"工程已保存：{_currentProjectName}{System.IO.Path.GetExtension(path)}";
+                    StatusText = _saveStatusMessage;
+                }
+
                 return true;
             }
             finally
@@ -1421,6 +1568,7 @@ namespace IEC104.App.ViewModels
             _lastSavedAt = null;
             _isWelcomeVisible = false;
 
+            StopAutoSave();
             RefreshCommandStates();
             RebuildSlaveRows();
             AppSettingsStore.RememberProject(_currentProjectPath, _currentProjectName);
@@ -1465,6 +1613,7 @@ namespace IEC104.App.ViewModels
             _lastSavedAt = null;
             _isWelcomeVisible = false;
 
+            StopAutoSave();
             SaveProjectTo(path, projectName);
             AppSettingsStore.RememberProject(_currentProjectPath, _currentProjectName);
 
@@ -1499,6 +1648,7 @@ namespace IEC104.App.ViewModels
             _lastSavedAt = null;
             IsWelcomeVisible = true;
 
+            StopAutoSave();
             RefreshCommandStates();
             RebuildSlaveRows();
             AppSettingsStore.ForgetCurrentProject();
@@ -1517,6 +1667,9 @@ namespace IEC104.App.ViewModels
         /// </summary>
         internal void ClearDirtyState()
         {
+            // 顺手把防抖也停掉：调度器里可能正欠着一次写盘，
+            // 不清的话它会在后面的断言中间突然落一次盘，把 mtime 基线打乱。
+            StopAutoSave();
             _isProjectDirty = false;
             _isValueDirty = false;
             NotifyProjectState();
@@ -1547,6 +1700,11 @@ namespace IEC104.App.ViewModels
                 return;
             }
 
+            // 防抖要**每次改动都推后**，所以这句必须在下面的 early-return 之前：
+            // 已经脏了就直接返回的话，连着编辑十分钟也只在第一次改动后写一次盘，
+            // 而那一次多半正赶上用户还在敲。
+            ScheduleStructureSave();
+
             if (_isProjectDirty)
             {
                 return;
@@ -1572,7 +1730,17 @@ namespace IEC104.App.ViewModels
         /// </summary>
         internal void MarkValueDirty()
         {
-            if (_suppressDirty || _isValueDirty)
+            if (_suppressDirty)
+            {
+                return;
+            }
+
+            // 和结构脏同理：每次变化都要把计时器推后，所以放在 early-return 之前。
+            // 这条是全工具最热的路径（40 万点批量变化会调 40 万次），
+            // 里面只有一次时间戳赋值 + 一个 if，代价可以忽略。
+            ScheduleValueSave();
+
+            if (_isValueDirty)
             {
                 return;
             }
