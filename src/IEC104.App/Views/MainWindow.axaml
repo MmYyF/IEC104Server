@@ -457,18 +457,30 @@
                    VerticalAlignment="Center" Margin="10,0,10,0"
                    TextTrimming="CharacterEllipsis" />
 
-        <!-- 保存状态（1.10）：只有"未保存"用主色，其余是普通灰字。
-             "已保存 14:32"这种带时刻的写法比一个静态的"已保存"有用得多——
-             现场最常见的疑问是"我最后一次存的是几点的那版"。
+        <!-- 保存状态（1.10）：一颗状态指示器，不是一段裸文字。
+             三态各有一个形状信号，色弱也能分辨（圆点 / 对勾 / 双箭头）：
+               · 未保存 → 实心主色圆点 + 浅主色胶囊底（和侧栏状态灯、工具条保存按钮同一套语言）
+               · 已保存 → 灰对勾 + 灰字，无底，安静
+               · 写盘中 → 双箭头 + 淡灰字
+             为什么"已保存 14:32"要带时刻：现场最常见的问题就是"我最后存的是几点那版"。
 
-             颜色为什么不绑 VM 给的画刷：绑的话切主题时画刷对象不会自动换
-             （VM 只在工程状态变化时通知），这条文字就会一直挂着旧主题的颜色。
-             改成"类 + 样式里的 DynamicResource"，换主题由样式引擎直接刷新。 -->
-        <TextBlock Grid.Column="3" Classes="hint saveState"
-                   Classes.dirty="{Binding IsProjectDirty}"
-                   Text="{Binding SaveStateText}"
-                   IsVisible="{Binding ShowSaveState}"
-                   VerticalAlignment="Center" Margin="0,0,14,0" />
+             颜色不绑 VM 给的画刷，走 Classes + 样式里的 DynamicResource：
+             绑画刷的话切主题不会重取，这行字会一直挂着旧主题的颜色。 -->
+        <Border Grid.Column="3" Classes="saveState" x:Name="SaveStateIndicator"
+                Classes.dirty="{Binding IsProjectDirty}"
+                Classes.saving="{Binding IsSaving}"
+                IsVisible="{Binding ShowSaveState}"
+                Margin="0,0,14,0"
+                ToolTip.Tip="{Binding SaveStateTip}">
+          <StackPanel Orientation="Horizontal" Spacing="5">
+            <Ellipse Classes="saveStateDot" IsVisible="{Binding IsProjectDirty}" />
+            <ctl:MenuGlyph Classes="saveStateGlyph" Data="{StaticResource IconCheck}"
+                           IsVisible="{Binding IsSaveIdle}" />
+            <ctl:MenuGlyph Classes="saveStateGlyph" Data="{StaticResource IconSync}"
+                           IsVisible="{Binding IsSaving}" />
+            <TextBlock Classes="saveStateText" Text="{Binding SaveStateText}" />
+          </StackPanel>
+        </Border>
 
         <TextBlock Grid.Column="4" Classes="hint" Text="{Binding RunningSummary}"
                    VerticalAlignment="Center" Margin="0,0,14,0" />

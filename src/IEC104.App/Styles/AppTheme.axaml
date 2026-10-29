@@ -87,6 +87,8 @@
     <!-- GitHub：品牌剪影，实心（不套描边样式） -->
     <StreamGeometry x:Key="IconGitHub">M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.9-1.29 2.74-1.02 2.74-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.33 4.69-4.56 4.94.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2z</StreamGeometry>
     <StreamGeometry x:Key="IconCheck">M5 12.5l4.5 4.5L19 7.5</StreamGeometry>
+    <!-- 写入中：上下双箭头（比软盘干净——11px 下软盘的内框会糊成一团） -->
+    <StreamGeometry x:Key="IconSync">M8 4.6v10.8 M5.2 12.6 8 15.4l2.8-2.8 M16 19.4V8.6 M13.2 11.4 16 8.6l2.8 2.8</StreamGeometry>
 
 
     <!-- ══ 底部监视面板：页签与内容区连成一体的卡片 ══
@@ -672,11 +674,62 @@
     <Setter Property="FontSize" Value="11" />
   </Style>
 
-  <!-- 状态栏的"未保存"：和工具条保存按钮亮起是同一个信号（主色），
-       半粗一档，让它在一条灰字里能被扫到；保存完变回普通灰字 -->
-  <Style Selector="TextBlock.hint.saveState.dirty">
-    <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}" />
+  <!-- ══ 状态栏的工程保存状态（1.10）══
+       不是一段裸文字，而是一颗「状态指示器」：
+         · 已保存 → 灰对勾 + 灰字，无底（安静，不抢过程信息的注意力）
+         · 未保存 → 实心主色圆点 + 主色字 + 浅主色胶囊底（和侧栏状态灯、
+           工具条保存按钮是同一个信号：主色 = 需要你处理）
+         · 写盘中 → 双箭头 + 淡灰字，无底
+       圆角 9 与健康度胶囊一致，两者并排时是同一套"胶囊"语言。
+       颜色全走 DynamicResource：六套主题各有一个主色，切主题自动跟着变。 -->
+  <Style Selector="Border.saveState">
+    <Setter Property="Padding" Value="7,2" />
+    <Setter Property="CornerRadius" Value="9" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <Style Selector="Border.saveState.dirty">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+  </Style>
+
+  <!-- 写盘中优先于 dirty：保存那一瞬间脏标记还没清掉，
+       不能让"正在保存…"还顶着未保存的胶囊底 -->
+  <Style Selector="Border.saveState.saving">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+
+  <Style Selector="Border.saveState Ellipse.saveStateDot">
+    <Setter Property="Fill" Value="{DynamicResource PrimaryBrush}" />
+    <Setter Property="Width" Value="6" />
+    <Setter Property="Height" Value="6" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <!-- 图标跟文字同一个灰：用过 disabled 那一档，11px 下单看像"这个功能灰掉了"，
+       而不像"已经存好了"。已保存要安静，但不能看着像失效。 -->
+  <Style Selector="Border.saveState ctl|MenuGlyph.saveStateGlyph">
+    <Setter Property="Width" Value="11" />
+    <Setter Property="Height" Value="11" />
+    <Setter Property="StrokeThickness" Value="2.4" />
+    <Setter Property="Stroke" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <Style Selector="Border.saveState TextBlock.saveStateText">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <Style Selector="Border.saveState.dirty TextBlock.saveStateText">
+    <Setter Property="Foreground" Value="{DynamicResource PrimarySoftTextBrush}" />
     <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <Style Selector="Border.saveState.saving TextBlock.saveStateText">
+    <Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}" />
+    <Setter Property="FontWeight" Value="Normal" />
   </Style>
 
   <!-- ── 输入类控件：统一圆角 ──────────────────────────────────

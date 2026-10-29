@@ -1280,6 +1280,38 @@ namespace IEC104.App.ViewModels
         }
 
         /// <summary>
+        /// 「已保存」态：显示对勾。
+        /// 写盘中不算（那一刻脏标记可能还没清，会同时亮出两个形状）。
+        /// </summary>
+        public bool IsSaveIdle => ShowSaveState && !_isSaving && !_isProjectDirty;
+
+        /// <summary>状态栏那颗指示器的悬停提示：写明"存到哪个文件、什么时候存的"</summary>
+        public string SaveStateTip
+        {
+            get
+            {
+                if (_isSaving)
+                {
+                    return "正在写入工程文件…";
+                }
+
+                if (!HasProject)
+                {
+                    return "这些改动还没有存成文件。按 Ctrl+S 会先让你选存放位置。";
+                }
+
+                if (_isProjectDirty)
+                {
+                    return $"点表有改动还没保存（Ctrl+S 保存到 {_currentProjectName}{ProjectStore.Extension}）";
+                }
+
+                return _lastSavedAt.HasValue
+                    ? $"已保存到 {_currentProjectPath}\n{_lastSavedAt.Value:yyyy-MM-dd HH:mm:ss}"
+                    : $"已保存到 {_currentProjectPath}";
+            }
+        }
+
+        /// <summary>
         /// 保存到当前工程文件。返回是否真的写了盘。
         /// 没有工程（或没有改动）时直接返回 false，让调用方决定要不要提示。
         /// </summary>
@@ -1310,6 +1342,8 @@ namespace IEC104.App.ViewModels
             OnPropertyChanged(nameof(IsSaving));
             OnPropertyChanged(nameof(CanSaveProject));
             OnPropertyChanged(nameof(SaveStateText));
+            OnPropertyChanged(nameof(SaveStateTip));
+            OnPropertyChanged(nameof(IsSaveIdle));
             OnPropertyChanged(nameof(SaveProjectTip));
 
             try
@@ -1507,6 +1541,8 @@ namespace IEC104.App.ViewModels
             OnPropertyChanged(nameof(IsValueDirty));
             OnPropertyChanged(nameof(ShowSaveState));
             OnPropertyChanged(nameof(SaveStateText));
+            OnPropertyChanged(nameof(SaveStateTip));
+            OnPropertyChanged(nameof(IsSaveIdle));
             OnPropertyChanged(nameof(CanSaveProject));
             OnPropertyChanged(nameof(SaveProjectTip));
             (SaveProjectCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -1520,11 +1556,17 @@ namespace IEC104.App.ViewModels
             OnPropertyChanged(nameof(HasProject));
             OnPropertyChanged(nameof(IsProjectDirty));
             OnPropertyChanged(nameof(IsValueDirty));
+            // IsSaving 必须在这里也通知：SaveProjectTo 收尾走的是 NotifyProjectState，
+            // 只在开始时通知一次的话，状态栏那颗指示器的 saving 类会一直挂着，
+            // "正在保存…" 的淡灰样式就永久生效了（自检 statusbar-save-* 抓到的）。
+            OnPropertyChanged(nameof(IsSaving));
             OnPropertyChanged(nameof(CanSaveProject));
             OnPropertyChanged(nameof(SaveProjectTip));
             OnPropertyChanged(nameof(WindowTitle));
             OnPropertyChanged(nameof(ShowSaveState));
             OnPropertyChanged(nameof(SaveStateText));
+            OnPropertyChanged(nameof(SaveStateTip));
+            OnPropertyChanged(nameof(IsSaveIdle));
             OnPropertyChanged(nameof(WelcomeTitle));
             OnPropertyChanged(nameof(WelcomeSubtitle));
             OnPropertyChanged(nameof(WelcomeProjectPath));

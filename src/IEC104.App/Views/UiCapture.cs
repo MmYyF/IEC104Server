@@ -10,6 +10,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
+using Shapes = Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
@@ -5468,6 +5469,53 @@ namespace IEC104.App.Views
                     + $"图标={saveGlyph?.Bounds.Width:0.#}（期望 28×28 / 图标 16） => "
                     + (leftmost && sizeOk ? "PASS" : "FAIL"));
 
+                // ── ①b 状态栏那颗保存指示器：形状 + 颜色 + 胶囊底 ──
+                //     它不是一段裸文字，三态各有自己的形状（圆点 / 对勾 / 双箭头），
+                //     色弱也能分辨；所以不能只量文字，得把形状和底也一起量。
+                Border saveBadge = mainWindow.FindControl<Border>("SaveStateIndicator");
+                List<MenuGlyph> badgeGlyphs = saveBadge?
+                    .GetVisualDescendants()
+                    .OfType<MenuGlyph>()
+                    .ToList() ?? new List<MenuGlyph>();
+                MenuGlyph checkGlyph = badgeGlyphs.FirstOrDefault();
+                MenuGlyph syncGlyph = badgeGlyphs.Skip(1).FirstOrDefault();
+                Shapes.Ellipse badgeDot = saveBadge?
+                    .GetVisualDescendants()
+                    .OfType<Shapes.Ellipse>()
+                    .FirstOrDefault(ellipse => ellipse.Classes.Contains("saveStateDot"));
+                TextBlock badgeText = saveBadge?
+                    .GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .FirstOrDefault(text => text.Classes.Contains("saveStateText"));
+
+                Color badgeBackground() =>
+                    (saveBadge?.Background as ISolidColorBrush)?.Color ?? Colors.Transparent;
+                Color badgeForeground() =>
+                    (badgeText?.Foreground as ISolidColorBrush)?.Color ?? Colors.Transparent;
+
+                bool hiddenWhenClean = saveBadge != null && !saveBadge.IsEffectivelyVisible;
+
+                // 落一个工程出来，进入"已保存"态
+                viewModel.SaveProjectTo(projectPath, "自检工程");
+                Dispatcher.UIThread.RunJobs();
+
+                bool idleBadge = saveBadge?.IsEffectivelyVisible == true
+                    && checkGlyph?.IsEffectivelyVisible == true
+                    && badgeDot?.IsEffectivelyVisible != true
+                    && syncGlyph?.IsEffectivelyVisible != true
+                    && badgeBackground().A == 0
+                    && badgeForeground() == ReadThemeColor("TextSecondaryBrush")
+                    && !string.IsNullOrEmpty(badgeText?.Text);
+
+                Log(dir, $"statusbar-save-idle: 无工程时隐藏={hiddenWhenClean} "
+                    + $"已保存可见={saveBadge?.IsEffectivelyVisible} 对勾={checkGlyph?.IsEffectivelyVisible} "
+                    + $"圆点={badgeDot?.IsEffectivelyVisible} 双箭头={syncGlyph?.IsEffectivelyVisible} "
+                    + $"底=透明({badgeBackground().A == 0}) 字=\"{badgeText?.Text}\" 字色={badgeForeground()} => "
+                    + (hiddenWhenClean && idleBadge ? "PASS" : "FAIL"));
+
+                // 改结构 → 未保存态：主色胶囊 + 实心圆点
+                Color wantSoft = ReadThemeColor("PrimarySoftBrush");
+                Color wantSoftText = ReadThemeColor("PrimarySoftTextBrush");
                 // ── ② 主色必须跟着主题走：六套主题两两不同，且与工具条底色对比度 ≥ 3.0 ──
                 //    非文字元素按 WCAG 的图形标准 3:1，不是文字的 4.5:1
                 string restoreId = ThemeService.Current?.Id;
@@ -5508,11 +5556,8 @@ namespace IEC104.App.Views
                 Color idleInk = (saveGlyph?.Stroke as ISolidColorBrush)?.Color ?? Colors.Transparent;
                 bool idleOk = idleInk == wantIdle && !viewModel.CanSaveProject;
 
-                // 真的落一个工程文件出来（不新建空工程：直接把手上的演示数据存成工程，
-                // 这样后面所有断言都有真实点表可用）
-                viewModel.SaveProjectTo(projectPath, "自检工程");
-                Dispatcher.UIThread.RunJobs();
-
+                // 工程文件在 ①b 已经落过盘（那里要验"已保存"态，本来就得先存一次），
+                // 这里只确认它真的在磁盘上、且路径正确
                 bool fileOk = System.IO.File.Exists(projectPath)
                     && viewModel.HasProject
                     && System.IO.Path.GetFileName(viewModel.CurrentProjectPath) == "自检工程.iec104proj";
@@ -5523,14 +5568,49 @@ namespace IEC104.App.Views
                 Color dirtyInk = (saveGlyph?.Stroke as ISolidColorBrush)?.Color ?? Colors.Transparent;
                 bool dirtyOk = viewModel.IsProjectDirty && viewModel.CanSaveProject && dirtyInk == wantDirty;
 
+                // 未保存态的指示器：浅主色胶囊底 + 实心圆点 + 主色半粗字。
+                // 先取快照再往下走：后面的 SaveProject 会把状态改回"已保存"，
+                // 如果等到打日志时再去读控件，日志里写的全是存完后的样子
+                // （第一版就是这样，看着像断言坏了，其实是日志在说谎）。
+                bool dirtyDotOn = badgeDot?.IsEffectivelyVisible == true;
+                bool dirtyCheckOn = checkGlyph?.IsEffectivelyVisible == true;
+                bool dirtySyncOn = syncGlyph?.IsEffectivelyVisible == true;
+                Color dirtyBackground = badgeBackground();
+                Color dirtyForeground = badgeForeground();
+                FontWeight dirtyWeight = badgeText?.FontWeight ?? FontWeight.Normal;
+                string dirtyCaption = badgeText?.Text;
+
+                bool dirtyBadge = saveBadge?.IsEffectivelyVisible == true
+                    && dirtyDotOn
+                    && !dirtyCheckOn
+                    && !dirtySyncOn
+                    && dirtyBackground == wantSoft
+                    && dirtyForeground == wantSoftText
+                    && dirtyWeight == FontWeight.SemiBold
+                    && dirtyCaption == "未保存";
+
+                // 留一张"未保存"态的实图：这三态是给人看的，光靠断言看不出胶囊底抢不抢眼。
+                // Save 走离屏渲染，不会改动窗口状态，存完照常往下走。
+                Save(mainWindow, Path.Combine(dir, "43-状态栏-未保存.png"));
+
                 bool saved = viewModel.SaveProject();
                 Dispatcher.UIThread.RunJobs();
                 Color afterInk = (saveGlyph?.Stroke as ISolidColorBrush)?.Color ?? Colors.Transparent;
                 bool idleBack = saved && !viewModel.IsProjectDirty && afterInk == wantIdle;
 
+                // 存完，指示器回到"对勾 + 无底"
+                bool badgeBack = checkGlyph?.IsEffectivelyVisible == true
+                    && badgeDot?.IsEffectivelyVisible != true
+                    && badgeBackground().A == 0;
+
                 Log(dir, $"toolbar-save-states: 无工程={idleOk}({idleInk}) 落盘={fileOk} "
                     + $"改动={dirtyOk}({dirtyInk} 期望 {wantDirty}) 存后={idleBack}({afterInk}) => "
                     + (idleOk && fileOk && dirtyOk && idleBack ? "PASS" : "FAIL"));
+
+                Log(dir, $"statusbar-save-dirty: 圆点={dirtyDotOn} 对勾={dirtyCheckOn} 双箭头={dirtySyncOn} "
+                    + $"胶囊底={dirtyBackground}(期望 {wantSoft}) 字色={dirtyForeground}(期望 {wantSoftText}) "
+                    + $"半粗={dirtyWeight} 字=\"{dirtyCaption}\" 存后回到对勾={badgeBack} => "
+                    + (dirtyBadge && badgeBack ? "PASS" : "FAIL"));
 
                 // ── ④ 初始值语义：SetValue 不许污染 InitValue；复位回到初始值 ──
                 SlaveViewModel slave = viewModel.Connections
