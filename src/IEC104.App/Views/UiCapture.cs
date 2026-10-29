@@ -5709,6 +5709,37 @@ namespace IEC104.App.Views
                     + $"双字段落盘={persisted} 整站复位={resetOk}({slave?.Points.Count} 点) => "
                     + (initKept && persisted && resetOk ? "PASS" : "FAIL"));
 
+                // ── ④b 老格式 .iec104ws：能直接打开，存一次静默升级标识、文件不改名 ──
+                //    现场手里一堆 1.9.x 存的"工作区"，迁移口径必须是"打开就能用"：
+                //    不弹转换对话框、也不另存成新文件（用户会找不到自己的东西）。
+                //    做法是把刚存的新格式文件里的标识改回旧值，当成老文件喂进去。
+                viewModel.SaveProject();
+                string modernJson = System.IO.File.ReadAllText(projectPath);
+                string legacyPath = System.IO.Path.Combine(workDir, "旧工作区.iec104ws");
+                System.IO.File.WriteAllText(
+                    legacyPath,
+                    modernJson.Replace(ProjectStore.FormatTag, ProjectStore.LegacyFormatTag,
+                        StringComparison.Ordinal));
+
+                int legacyPoints = viewModel.OpenProject(legacyPath);
+                bool legacyOpened = legacyPoints > 0
+                    && viewModel.HasProject
+                    && string.Equals(viewModel.CurrentProjectPath, legacyPath,
+                        StringComparison.OrdinalIgnoreCase);
+
+                // 存一次：文件内容升级成新标识，文件名保持 .iec104ws，路径不变（没走另存为）
+                viewModel.SaveProject();
+                string upgradedJson = System.IO.File.ReadAllText(legacyPath);
+                bool tagUpgraded = upgradedJson.Contains(ProjectStore.FormatTag, StringComparison.Ordinal)
+                    && !upgradedJson.Contains(ProjectStore.LegacyFormatTag, StringComparison.Ordinal);
+                bool nameKept = System.IO.File.Exists(legacyPath)
+                    && string.Equals(viewModel.CurrentProjectPath, legacyPath,
+                        StringComparison.OrdinalIgnoreCase);
+
+                Log(dir, $"project-legacy-open: 打开 {legacyPoints:N0} 点={legacyOpened} "
+                    + $"标识升级={tagUpgraded} 文件名与路径不变={nameKept} => "
+                    + (legacyOpened && tagUpgraded && nameKept ? "PASS" : "FAIL"));
+
                 // ── ⑤ 欢迎页两态（工程已恢复 / 没有工程） ──
                 bool stateBTitle = viewModel.WelcomeTitle == "当前工程";
                 viewModel.IsWelcomeVisible = true;

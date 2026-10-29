@@ -284,6 +284,56 @@ namespace IEC104.App.Views
             Log($"[bench] 11.工程存取 {totalPoints:N0} 点：保存 {saveMs} ms"
                 + $"（{fileBytes / 1024.0 / 1024.0:0.0} MB）+ 载入 {loadMs} ms（回读 {loaded:N0} 点）");
 
+            // ── 12. 缓变 60 秒：防抖生效，全程零写盘（1.10.1 的压测口径）──
+            // 为什么要真跑一分钟：这是"挂一整天仿真，会不会一直写盘、界面一直卡"的唯一答案。
+            // 判据很硬：文件 mtime 完全不变 + 调度器的写盘计数不变，有任何一次写盘就算失败。
+            // 顺带守住一个设计取舍：缓变一直跑时值**不会**中途落盘，只在退出时写一次——
+            // 中间那些值是过程量，不值得为它们每分钟卡 200 ms（见 SaveScheduler 的注释）。
+            if (System.IO.File.Exists(workspacePath))
+            {
+                // 11 段载入后点对象是新的一批，变化模式要重新挂
+                List<SlaveViewModel> live = viewModel.Connections.SelectMany(c => c.Slaves).ToList();
+                int liveActive = 0;
+                foreach (SlaveViewModel slave in live)
+                {
+                    for (int index = 0; index < slave.Points.Count; index += 10)
+                    {
+                        slave.Points[index].ChangePattern = ChangePattern.RandomWalk;
+                        liveActive++;
+                    }
+                }
+
+                DateTime fileBefore = System.IO.File.GetLastWriteTime(workspacePath);
+                int writesBefore = viewModel.ValueSaver.WriteCount;
+
+                viewModel.AutoChange.SetInterval(1000);
+                viewModel.AutoChange.Start();
+                await Task.Delay(60000);
+                viewModel.AutoChange.Stop();
+
+                bool untouched = System.IO.File.GetLastWriteTime(workspacePath) == fileBefore
+                    && viewModel.ValueSaver.WriteCount == writesBefore;
+
+                Log($"[bench] 12.缓变 60 秒零写盘：活跃 {liveActive:N0} 点 ×60 拍 "
+                    + $"mtime 未变={System.IO.File.GetLastWriteTime(workspacePath) == fileBefore} "
+                    + $"写盘次数={viewModel.ValueSaver.WriteCount}（期望 {writesBefore}）"
+                    + $" 值脏={viewModel.IsValueDirty} => {(untouched ? "PASS" : "FAIL")}");
+
+                foreach (SlaveViewModel slave in live)
+                {
+                    foreach (PointViewModel point in slave.Points)
+                    {
+                        point.ChangePattern = ChangePattern.None;
+                    }
+                }
+
+                // 停手写一次：既是"停下来就落盘"的实测，也顺手把脏标记清干净，
+                // 免得关窗时撞上关闭保护（压测模式没有"点保存"的人）
+                sw.Restart();
+                viewModel.SaveProject();
+                Log($"[bench] 12b.停手后写一次 {totalPoints:N0} 点用时 {sw.ElapsedMilliseconds} ms");
+            }
+
             Log("[bench] done");
         }
     }
