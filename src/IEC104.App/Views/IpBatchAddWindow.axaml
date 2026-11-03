@@ -1,0 +1,78 @@
+﻿<views:DialogWindow xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:IEC104.App.Views"
+        x:Class="IEC104.App.Views.IpBatchAddWindow"
+        Title="批量添加 IP 地址"
+        Icon="/Assets/app.ico"
+        Width="620" Height="540"
+        WindowStartupLocation="CenterOwner">
+
+  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="14">
+
+    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6">
+      <TextBlock Text="添加到" VerticalAlignment="Center" />
+      <TextBlock Text="{Binding NicText}" FontWeight="SemiBold" VerticalAlignment="Center" />
+      <views:HintIcon Tip="按起始地址和步长生成一串地址，适合模拟整个网段的装置。整批一次提权（只弹一次授权窗口）；本机已有的地址会跳过，不会重复添加。加完的地址记在本工具的账本里，可以在 IP 地址管理里一键清理。" />
+    </StackPanel>
+
+    <!-- 参数分两行：一行放三个，硬挤在一行时掩码框会被推出面板右边
+         （620 宽下 8 列放不下，实测截图里那个框的右边框已经到窗口外了）。 -->
+    <Border Grid.Row="1" Classes="panel" Padding="12,10" Margin="0,10,0,0">
+      <Grid ColumnDefinitions="Auto,130,Auto,76,Auto,76" RowDefinitions="Auto,Auto">
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="起始地址" VerticalAlignment="Center"
+                   Margin="0,0,8,0" />
+        <TextBox Grid.Row="0" Grid.Column="1" x:Name="StartIpBox"
+                 Text="{Binding StartIp, Mode=TwoWay}" Watermark="192.168.1.10" />
+
+        <TextBlock Grid.Row="0" Grid.Column="2" Text="步长" VerticalAlignment="Center"
+                   Margin="14,0,8,0" />
+        <NumericUpDown Grid.Row="0" Grid.Column="3" Value="{Binding IpStep, Mode=TwoWay}"
+                       Minimum="1" Maximum="65535" Increment="1" FormatString="0" />
+
+        <TextBlock Grid.Row="0" Grid.Column="4" Text="数量" VerticalAlignment="Center"
+                   Margin="14,0,8,0" />
+        <NumericUpDown Grid.Row="0" Grid.Column="5" Value="{Binding Count, Mode=TwoWay}"
+                       Minimum="1" Maximum="254" Increment="1" FormatString="0" />
+
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="掩码" VerticalAlignment="Center"
+                   Margin="0,8,8,0" />
+        <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Orientation="Horizontal"
+                    Spacing="8" Margin="0,8,0,0">
+          <TextBox Text="{Binding Mask, Mode=TwoWay}" Width="130" />
+          <TextBlock Text="{Binding MaskHintText}" Classes="hint" VerticalAlignment="Center" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="2" Classes="panel" Margin="0,10,0,0">
+      <Grid RowDefinitions="Auto,*">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="10,8">
+          <TextBlock Grid.Column="0" Text="预览" FontWeight="SemiBold" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="1" Text="{Binding SummaryText}" Classes="hint"
+                     VerticalAlignment="Center" />
+        </Grid>
+
+        <DataGrid Grid.Row="1" x:Name="PreviewGrid" ItemsSource="{Binding Preview}"
+                  AutoGenerateColumns="False" CanUserSortColumns="False"
+                  CanUserReorderColumns="False" IsReadOnly="True">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="#" Binding="{Binding Index}" Width="50" />
+            <DataGridTextColumn Header="地址" Binding="{Binding Address}" Width="200" />
+            <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="*" />
+          </DataGrid.Columns>
+        </DataGrid>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto" Margin="0,12,0,0">
+      <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+        <TextBlock Text="{Binding StatusText}" Classes="hint" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding ErrorText}" Foreground="{DynamicResource DangerBrush}"
+                   TextWrapping="Wrap" />
+      </StackPanel>
+      <Button Grid.Column="1" Content="{Binding AddButtonText}" Width="96" Classes="primary"
+              Command="{Binding AddCommand}" Margin="0,0,8,0" />
+      <Button Grid.Column="2" Content="关闭" Width="88" Click="OnCloseClick" />
+    </Grid>
+  </Grid>
+</views:DialogWindow>

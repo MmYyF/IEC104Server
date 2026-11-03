@@ -222,6 +222,13 @@ namespace IEC104.App.ViewModels
             RaiseCommands();
         }
 
+        /// <summary>批量添加回来之后：重读网卡并把结果写进状态行</summary>
+        public void ReportBatchResult(string status)
+        {
+            Refresh();
+            StatusText = status;
+        }
+
         private void RebuildAddresses()
         {
             Addresses.Clear();

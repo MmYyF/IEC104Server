@@ -426,52 +426,194 @@ namespace IEC104.App.Services
             return "启动时添加 · " + nicName;
         }
 
+        /// <summary>
+        /// IP 字符串 → 32 位整数，方便按步长相加（末段超 255 会自动进位）。
+        ///
+        /// **只有这一份实现**：批量建站和批量加地址都要按步长算一串 IP，
+        /// 各写一份迟早出现"一个会进位、一个会算错"。
+        /// </summary>
+        public static bool TryParseIpToUInt32(string text, out uint value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return false;
+            }
+
+            string[] parts = text.Trim().Split('.');
+            if (parts.Length != 4)
+            {
+                return false;
+            }
+
+            uint result = 0;
+            foreach (string part in parts)
+            {
+                if (!byte.TryParse(part, out byte octet))
+                {
+                    return false;
+                }
+                result = (result << 8) | octet;
+            }
+
+            value = result;
+            return true;
+        }
+
+        /// <summary>32 位整数 → IP 字符串</summary>
+        public static string UInt32ToIp(uint value) =>
+            $"{(value >> 24) & 0xFF}.{(value >> 16) & 0xFF}.{(value >> 8) & 0xFF}.{value & 0xFF}";
+
         /// <summary>账本（本工具加过的地址）</summary>
         public IReadOnlyList<ManagedAddress> Managed => AppSettingsStore.Current.ManagedAddresses;
 
         /// <summary>
+        /// 本机全部 IPv4 的快照。
+        ///
+        /// 【为什么要这个】`IsLocalAddress` 每调一次就把所有网卡重新枚举一遍。
+        /// 批量加 200 个地址时逐个判断 = 200 次枚举，界面上会明显卡一下。
+        /// 批处理的场合先取一次快照，之后只用集合查。
+        /// </summary>
+        public HashSet<string> SnapshotLocalAddresses()
+        {
+            HashSet<string> set = new(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (nic.NetworkInterfaceType == NetworkInterfaceType.Loopback)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        foreach (UnicastIPAddressInformation info in nic.GetIPProperties().UnicastAddresses)
+                        {
+                            if (info.Address.AddressFamily == AddressFamily.InterNetwork)
+                            {
+                                set.Add(info.Address.ToString());
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // 单块网卡读失败不影响其它网卡
+                    }
+                }
+            }
+            catch
+            {
+                // 枚举失败就当"都没有"：最坏是多执行一次 netsh，不会误删
+            }
+
+            return set;
+        }
+
+        /// <summary>
         /// 确保某个地址在本机存在：已在 → 跳过；不在 → 交给提权通道添加并记账。
+        /// 单个与批量走的是同一条路径（<see cref="EnsureManyAsync"/>），
+        /// 免得"手工加一个"和"批量加十个"出现两套判定。
         /// </summary>
         public async System.Threading.Tasks.Task<IpChangeResult> EnsureAsync(
             string address, string nicId, string mask, string source)
         {
-            string ip = (address ?? string.Empty).Trim();
-            if (!IPAddress.TryParse(ip, out _))
-            {
-                return IpChangeResult.Failed(ip, $"“{address}”不是合法的 IPv4 地址。");
-            }
+            IReadOnlyList<IpChangeResult> results = await EnsureManyAsync(
+                new[] { address }, nicId, mask, source).ConfigureAwait(true);
 
-            if (IsLocalAddress(ip))
-            {
-                // 关键：判据是"本机任一网卡上已有"，不是只看目标网卡。
-                // 否则同一个地址会在两块网卡上各挂一份，主站从哪块来都说不清。
-                return IpChangeResult.Skipped(ip);
-            }
+            string ip = (address ?? string.Empty).Trim();
+            return results?.FirstOrDefault() ?? IpChangeResult.Failed(ip, "提权进程没有返回结果。");
+        }
+
+        /// <summary>
+        /// 批量确保地址存在。**一次提权覆盖整批** —— 每个地址弹一次 UAC，
+        /// 用户点到第三次就会去点"否"，然后觉得"这工具坏了"。
+        ///
+        /// 返回的顺序与入参一一对应（跳过的和失败的也在里面），调用方可以按下标回填。
+        /// </summary>
+        public async System.Threading.Tasks.Task<IReadOnlyList<IpChangeResult>> EnsureManyAsync(
+            IReadOnlyList<string> addresses, string nicId, string mask, string source)
+        {
+            List<string> inputs = (addresses ?? Array.Empty<string>())
+                .Select(item => (item ?? string.Empty).Trim())
+                .ToList();
+
+            IpChangeResult[] results = new IpChangeResult[inputs.Count];
 
             string target = string.IsNullOrWhiteSpace(nicId) ? AppSettingsStore.Current.DefaultNicId : nicId;
             NicInfo nic = FindNic(target);
-            if (nic == null)
+
+            List<string> pending = new();
+            List<int> pendingIndex = new();
+            HashSet<string> snapshot = SnapshotLocalAddresses();
+
+            for (int index = 0; index < inputs.Count; index++)
             {
-                return IpChangeResult.Failed(ip,
-                    string.IsNullOrWhiteSpace(target)
-                        ? "没有选择网卡。"
-                        : "这条配置指定的网卡在本机找不到（换机器或被禁用），请重新选择网卡。");
+                string ip = inputs[index];
+
+                if (!IPAddress.TryParse(ip, out _))
+                {
+                    results[index] = IpChangeResult.Failed(ip, $"“{ip}”不是合法的 IPv4 地址。");
+                    continue;
+                }
+
+                // 关键：判据是"本机任一网卡上已有"，不是只看目标网卡。
+                // 否则同一个地址会在两块网卡上各挂一份，主站从哪块来都说不清。
+                if (snapshot.Contains(ip))
+                {
+                    results[index] = IpChangeResult.Skipped(ip);
+                    continue;
+                }
+
+                if (nic == null)
+                {
+                    results[index] = IpChangeResult.Failed(ip,
+                        string.IsNullOrWhiteSpace(target)
+                            ? "没有选择网卡。"
+                            : "指定的网卡在本机找不到（换机器或被禁用），请重新选择网卡。");
+                    continue;
+                }
+
+                if (!nic.IsUp)
+                {
+                    results[index] = IpChangeResult.Failed(ip,
+                        $"网卡“{nic.Name}”未连接，地址加上去也不会生效。");
+                    continue;
+                }
+
+                pending.Add(ip);
+                pendingIndex.Add(index);
             }
 
-            if (!nic.IsUp)
+            if (pending.Count == 0)
             {
-                return IpChangeResult.Failed(ip, $"网卡“{nic.Name}”未连接，地址加上去也不会生效。");
+                return results;
             }
 
-            IReadOnlyList<IpChangeResult> results = await Editor.ApplyAsync(
-                new[] { IpChangeRequest.Add(nic.Id, nic.Name, ip, mask) }).ConfigureAwait(true);
+            string effectiveMask = string.IsNullOrWhiteSpace(mask) ? IpMask.DefaultMask : mask.Trim();
 
-            IpChangeResult result = results?.FirstOrDefault() ?? IpChangeResult.Failed(ip, "提权进程没有返回结果。");
-            if (result.Ok)
+            List<IpChangeRequest> requests = pending
+                .Select(ip => IpChangeRequest.Add(nic.Id, nic.Name, ip, effectiveMask))
+                .ToList();
+
+            IReadOnlyList<IpChangeResult> applied = await Editor.ApplyAsync(requests).ConfigureAwait(true);
+
+            for (int slot = 0; slot < pending.Count; slot++)
             {
-                Remember(ip, nic, mask, source);
+                string ip = pending[slot];
+                IpChangeResult one = applied != null && slot < applied.Count
+                    ? applied[slot]
+                    : IpChangeResult.Failed(ip, "提权进程没有返回结果。");
+
+                results[pendingIndex[slot]] = one;
+
+                if (one.Ok)
+                {
+                    Remember(ip, nic, effectiveMask, source);
+                }
             }
-            return result;
+
+            return results.Select(item => item ?? IpChangeResult.Failed(string.Empty, "未执行。")).ToList();
         }
 
         /// <summary>删掉账本里的地址（只认账本，删不到别的东西）</summary>

@@ -11,11 +11,14 @@
        1366×768 和 1080p@150% 下都点得到（见界面设计规范）。 -->
   <Grid RowDefinitions="Auto,*,Auto" Margin="14">
 
-    <StackPanel Grid.Row="0" Spacing="6">
-      <TextBlock Text="给本机网卡添加仿真用的 IP" FontWeight="SemiBold" />
-      <TextBlock Classes="hint" TextWrapping="Wrap"
-                 Text="仿真从站要先让本机真的拥有那个 IP：主站按 IP 找装置，地址不在本机时通道会报 10049。这里只删得掉本工具自己加过的地址。" />
-      <TextBlock Text="{Binding ElevationText}" Classes="hint" TextWrapping="Wrap" />
+    <!-- 顶部一行：名称 + 悬停说明 + 权限状态。
+         原来这里是三段连续小字（标题、为什么需要加 IP、只删得到什么），
+         一进窗口先读五行说明，真正要干的事反而被压到下面。 -->
+    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6">
+      <TextBlock Text="本机网卡与 IPv4" FontWeight="SemiBold" VerticalAlignment="Center" />
+      <views:HintIcon Tip="仿真从站要先让本机真的拥有那个 IP：主站按 IP 找装置，地址不在本机时通道会报 10049。这里只删得掉本工具自己加过的地址；系统原有的和 DHCP 拿到的一律只读。" />
+      <TextBlock Text="{Binding ElevationText}" Classes="hint" VerticalAlignment="Center"
+                 Margin="10,0,0,0" />
     </StackPanel>
 
     <Grid Grid.Row="1" ColumnDefinitions="320,10,*" Margin="0,12,0,0">
@@ -52,19 +55,17 @@
       <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto">
 
         <Border Grid.Row="0" Classes="panel" Padding="12,10">
-          <StackPanel Spacing="8">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <TextBlock Text="地址" VerticalAlignment="Center" />
-              <TextBox x:Name="NewAddressBox" Text="{Binding NewAddress, Mode=TwoWay}"
-                       Width="170" Watermark="192.168.1.10" />
-              <TextBlock Text="掩码" VerticalAlignment="Center" />
-              <TextBox Text="{Binding NewMask, Mode=TwoWay}" Width="150" />
-              <TextBlock Text="{Binding MaskHintText}" Classes="hint" VerticalAlignment="Center" />
-              <Button Content="添加" Classes="primary" Width="84"
-                      Command="{Binding AddCommand}" />
-            </StackPanel>
-            <TextBlock Classes="hint" TextWrapping="Wrap"
-                       Text="一个网卡可以挂多个地址，主站从哪个网段来都能连。地址若已在任何一块网卡上，会跳过不重复添加。" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="地址" VerticalAlignment="Center" />
+            <TextBox x:Name="NewAddressBox" Text="{Binding NewAddress, Mode=TwoWay}"
+                     Width="150" Watermark="192.168.1.10" />
+            <TextBlock Text="掩码" VerticalAlignment="Center" />
+            <TextBox Text="{Binding NewMask, Mode=TwoWay}" Width="126" />
+            <TextBlock Text="{Binding MaskHintText}" Classes="hint" VerticalAlignment="Center"
+                       MinWidth="66" />
+            <Button Content="添加" Classes="primary" Width="72"
+                    Command="{Binding AddCommand}" />
+            <views:HintIcon Tip="一个网卡可以挂多个地址，主站从哪个网段来都能连。地址若已在任何一块网卡上，会跳过不重复添加。要一次加一串，用右下角的「批量添加」。" />
           </StackPanel>
         </Border>
 
@@ -82,15 +83,17 @@
           </DataGrid>
         </Border>
 
-        <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="0,10,0,0">
-          <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-            <TextBlock Text="{Binding ManagedSummaryText}" Classes="hint" />
-            <TextBlock Text="只有“来源 = 本工具”的地址能删；系统原有的、DHCP 拿到的一律保留。"
-                       Classes="hint" TextWrapping="Wrap" />
+        <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,10,0,0">
+          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <TextBlock Text="{Binding ManagedSummaryText}" Classes="hint" VerticalAlignment="Center" />
+            <views:HintIcon Tip="只有“来源 = 本工具”的地址能删；系统原有的、DHCP 拿到的一律保留，避免误伤现场的正常配置。" />
           </StackPanel>
-          <Button Grid.Column="1" Content="删除选中" Width="100" Margin="0,0,8,0"
+          <Button Grid.Column="1" Content="批量添加…" Width="96" Margin="0,0,8,0"
+                  Click="OnBatchAddClick"
+                  ToolTip.Tip="按起始地址和步长一次加一串（整批只弹一次授权）" />
+          <Button Grid.Column="2" Content="删除选中" Width="100" Margin="0,0,8,0"
                   Command="{Binding DeleteCommand}" />
-          <Button Grid.Column="2" Content="清理本工具加的" Width="130"
+          <Button Grid.Column="3" Content="清理本工具加的" Width="130"
                   Command="{Binding CleanupCommand}"
                   ToolTip.Tip="把本工具添加过的地址全部删掉（账本里的都删）" />
         </Grid>

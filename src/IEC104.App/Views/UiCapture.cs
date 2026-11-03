@@ -6872,6 +6872,101 @@ namespace IEC104.App.Views
 
                 window.Close();
                 await Task.Delay(200);
+
+                // ⑫ 批量添加：预览算得对（含进位）、整批只弹一次授权、已有的会跳过
+                IpBatchAddViewModel batch = new(nic);
+
+                // 默认起始地址应该是"这块网卡上最大的地址 + 1"：用户八成就是要挨着往下加
+                uint nicMax = 0;
+                bool anyAddress = false;
+                foreach (IpAddressEntry entry in nic.Addresses)
+                {
+                    if (IpAddressService.TryParseIpToUInt32(entry.Address, out uint value)
+                        && (!anyAddress || value > nicMax))
+                    {
+                        nicMax = value;
+                        anyAddress = true;
+                    }
+                }
+
+                string expectedStart = anyAddress
+                    ? IpAddressService.UInt32ToIp(nicMax + 1)
+                    : "192.168.1.10";
+
+                // 先取快照：下面几行会覆盖 StartIp，日志里再读就成了"改完之后的值"
+                string suggested = batch.StartIp;
+                bool suggestOk = suggested == expectedStart;
+
+                // 240 + 5×3 会越过 .255，进位到下一段：这条最容易写错成"末段直接变 260"
+                batch.StartIp = "198.51.100.240";
+                batch.IpStep = 5;
+                batch.Count = 4;
+
+                string generated = string.Join(",", batch.Preview.Select(item => item.Address));
+                bool carryOk = batch.Preview.Count == 4
+                    && generated == "198.51.100.240,198.51.100.245,198.51.100.250,198.51.100.255";
+
+                int callsBefore = fake.ApplyCallCount;
+                int ledgerBeforeBatch = AppSettingsStore.Current.ManagedAddresses.Count;
+
+                await batch.AddAllForTestAsync();
+
+                bool oneElevation = fake.ApplyCallCount - callsBefore == 1;
+                bool batchAdded = batch.AddedCount == 4
+                    && AppSettingsStore.Current.ManagedAddresses.Count == ledgerBeforeBatch + 4;
+
+                Log(dir, $"ip-batch-preview: 建议起始={suggested}(期望 {expectedStart})={suggestOk} "
+                    + $"生成=[{generated}] 进位正确={carryOk} => "
+                    + (suggestOk && carryOk ? "PASS" : "FAIL"));
+
+                Log(dir, $"ip-batch-add: 添加 {batch.AddedCount} 个 账本+4={batchAdded} "
+                    + $"提权次数={fake.ApplyCallCount - callsBefore}(应为 1) => "
+                    + (oneElevation && batchAdded ? "PASS" : "FAIL"));
+
+                // 本机已有的一定要跳过：否则同一个地址在两块网卡上各挂一份
+                string existing = nic.Addresses.Select(item => item.Address).FirstOrDefault();
+                if (existing == null)
+                {
+                    Log(dir, "ip-batch-skip: 跳过（本机没有可复用的地址）");
+                }
+                else
+                {
+                    IpBatchAddViewModel skipModel = new(nic)
+                    {
+                        StartIp = existing,
+                        IpStep = 1,
+                        Count = 2
+                    };
+
+                    string firstStatus = skipModel.Preview.Count > 0 ? skipModel.Preview[0].Status : "(无)";
+                    bool marked = firstStatus.Contains("已有");
+                    int willAdd = skipModel.Preview.Count(item => item.WillAdd);
+                    int callsBeforeSkip = fake.ApplyCallCount;
+
+                    await skipModel.AddAllForTestAsync();
+
+                    // 判据：已有的那一行不进请求，实际添加数 == 预览里"待添加"的行数
+                    bool skipOk = marked
+                        && willAdd >= 1
+                        && skipModel.AddedCount == willAdd
+                        && fake.ApplyCallCount - callsBeforeSkip == 1
+                        && fake.Requests.Last().Address != existing;
+
+                    Log(dir, $"ip-batch-skip: {existing} 首行=[{firstStatus}] 待添加={willAdd} "
+                        + $"实际添加={skipModel.AddedCount} => " + (skipOk ? "PASS" : "FAIL"));
+                }
+
+                // ⑬ 批量添加窗口的截图（只截图，不点添加）
+                IpBatchAddWindow batchWindow = new()
+                {
+                    DataContext = new IpBatchAddViewModel(nic),
+                    WindowStartupLocation = WindowStartupLocation.Manual
+                };
+                batchWindow.Show();
+                await Task.Delay(600);
+                Save(batchWindow, Path.Combine(dir, "47-批量添加IP.png"));
+                batchWindow.Close();
+                await Task.Delay(200);
             }
             finally
             {
@@ -6907,8 +7002,13 @@ namespace IEC104.App.Views
             /// <summary>非空时所有请求都按失败返回（用来验"回退 0.0.0.0"）</summary>
             public string ForcedFailure { get; set; }
 
+            /// <summary>被调用了几次。批量添加必须只调一次 —— 一次调用 = 一次 UAC</summary>
+            public int ApplyCallCount { get; private set; }
+
             public Task<IReadOnlyList<IpChangeResult>> ApplyAsync(IReadOnlyList<IpChangeRequest> requests)
             {
+                ApplyCallCount++;
+
                 foreach (IpChangeRequest request in requests)
                 {
                     Requests.Add(request);

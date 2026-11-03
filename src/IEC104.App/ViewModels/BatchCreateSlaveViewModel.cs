@@ -385,36 +385,10 @@ namespace IEC104.App.ViewModels
                 .Replace("{ca}", ca.ToString());
         }
 
-        /// <summary>IP 字符串 → 32 位整数，方便按步长相加（末段超 255 会自动进位）</summary>
-        internal static bool TryParseIp(string text, out uint value)
-        {
-            value = 0;
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                return false;
-            }
+        /// <summary>IP 字符串 → 32 位整数。实现在 <see cref="IpAddressService.TryParseIpToUInt32"/>，全程序一份</summary>
+        internal static bool TryParseIp(string text, out uint value) =>
+            IpAddressService.TryParseIpToUInt32(text, out value);
 
-            string[] parts = text.Trim().Split('.');
-            if (parts.Length != 4)
-            {
-                return false;
-            }
-
-            uint result = 0;
-            foreach (string part in parts)
-            {
-                if (!byte.TryParse(part, out byte octet))
-                {
-                    return false;
-                }
-                result = (result << 8) | octet;
-            }
-
-            value = result;
-            return true;
-        }
-
-        internal static string IpToString(uint value) =>
-            $"{(value >> 24) & 0xFF}.{(value >> 16) & 0xFF}.{(value >> 8) & 0xFF}.{value & 0xFF}";
+        internal static string IpToString(uint value) => IpAddressService.UInt32ToIp(value);
     }
 }
