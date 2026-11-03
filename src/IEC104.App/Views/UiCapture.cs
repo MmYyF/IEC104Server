@@ -142,7 +142,7 @@ namespace IEC104.App.Views
 
             await CaptureAsync(dir, "12-通信报文监视",
                 () => new TrafficWindow(),
-                new TrafficViewModel(viewModel.Records));
+                BuildTrafficSampleModel());
 
             await CaptureAsync(dir, "13-批量变化",
                 () => new BatchChangeWindow(),
@@ -154,7 +154,7 @@ namespace IEC104.App.Views
                 new BatchCreateSlaveViewModel(viewModel.Connections));
 
             // 跑一遍批量变化，验证"每秒 200 点"这条链路真的是通的，而不只是界面画出来了
-            await RunBatchSelfCheckAsync(dir);
+            await RunBatchSelfCheckAsync(dir, mainWindow, viewModel);
 
             // 验证"新建从站时直接建通道"这条新链路
             RunSlaveChannelSelfCheck(dir, viewModel);
@@ -1045,10 +1045,14 @@ namespace IEC104.App.Views
 
             int solidCount = glyphs.Count(glyph => glyph.Classes.Contains("solid"));
             int visibleCount = glyphs.Count(glyph => glyph.IsEffectivelyVisible);
+            // 实心剪影从 5 变 6：1.10.2 加了"停止批量变化"那颗方形图标。
+            // 它平时 IsVisible=false（不参与布局，也不会有禁用色混进来），
+            // 所以有效可见数仍是 9/10。加这颗是为了让用户关掉参数窗口之后
+            // 还能在工具条上停下变化——属于设计决定，不是随手加图标。
             bool countOk = glyphs.Count >= 11
-                && glyphs.Count <= 12
+                && glyphs.Count <= 13
                 && visibleCount == expectedVisible
-                && solidCount == 5;
+                && solidCount == 6;
 
             Log(dir, $"toolbar-icon-set: 图标控件={glyphs.Count}(有效可见 {visibleCount}) "
                 + $"实心={solidCount} 预期 总数11~12/可见{expectedVisible} => "
@@ -1780,7 +1784,8 @@ namespace IEC104.App.Views
         ///   3. 再用固定步长模式跑一轮，校验增量确实按步长递增。
         /// 任何一项不符都写 FAIL，方便不盯着界面也能判断功能是否正常。
         /// </summary>
-        private static async Task RunBatchSelfCheckAsync(string dir)
+        private static async Task RunBatchSelfCheckAsync(
+            string dir, Window mainWindow, MainWindowViewModel viewModel)
         {
             // 造点：1..200 遥测（短浮点），201..300 遥信（单点）
             SlaveViewModel sandbox = new() { Name = "自检从站", CommonAddress = 99 };
@@ -1807,7 +1812,7 @@ namespace IEC104.App.Views
             long rounds = randomModel.Rounds;
             long changed = randomModel.ChangedPoints;
             randomModel.StopCommand.Execute(null);
-            randomModel.Dispose();
+            randomModel.Detach();
 
             // 值域与状态校验：遥测必须落在 [0,100]，遥信只能是 0 或 1
             int outOfRange = 0;
@@ -1870,7 +1875,7 @@ namespace IEC104.App.Views
             await Task.Delay(1000);
             long stepRounds = stepModel.Rounds;
             stepModel.StopCommand.Execute(null);
-            stepModel.Dispose();
+            stepModel.Detach();
 
             double totalDelta = 0;
             int increased = 0;
@@ -1887,6 +1892,77 @@ namespace IEC104.App.Views
 
             Log(dir, $"batch-step: rounds={stepRounds} 按步长精确递增={increased}/{StepSampleCount} " +
                      $"总增量={totalDelta} => {(stepOk ? "PASS" : "FAIL")}");
+
+            // ── ⑤ 关掉参数窗口，变化必须继续（1.10.2 用户报的核心问题）──
+            //    这一条只能靠"关掉之后再等一会儿看轮数还在不在涨"来验：
+            //    截图拍不到"定时器被释放了"这件事。
+            BatchChangeSession session = new();
+            BatchChangeViewModel windowModel = new(session, sandbox.Points)
+            {
+                IntervalMs = 200,
+                BatchSize = 50
+            };
+            windowModel.StartCommand.Execute(null);
+            await Task.Delay(500);
+
+            long roundsBeforeDetach = session.RoundCount;
+            windowModel.Detach();                       // 等价于用户点窗口的 ×
+            await Task.Delay(700);
+
+            bool keepsRunning = session.IsRunning && session.RoundCount > roundsBeforeDetach;
+            long roundsAfterDetach = session.RoundCount;
+
+            session.Stop();
+            bool sessionStopped = !session.IsRunning;
+
+            Log(dir, $"batch-close-keeps-running: 关窗时轮次={roundsBeforeDetach} "
+                + $"等待后轮次={roundsAfterDetach} 关窗后仍在变化={keepsRunning} "
+                + $"停止生效={sessionStopped} => "
+                + ((keepsRunning && sessionStopped) ? "PASS" : "FAIL"));
+
+            session.Dispose();
+
+            // ── ⑥ 工具条提示点 / 停止按钮 / 状态栏那一段 ──
+            if (viewModel == null)
+            {
+                Log(dir, "batch-indicator: 跳过（无主视图模型）");
+                return;
+            }
+
+            bool idleQuiet = !viewModel.IsBatchChanging
+                && viewModel.BatchChangeStatusText.Length == 0
+                && !viewModel.StopBatchChangeCommand.CanExecute(null);
+
+            viewModel.BatchChange.Start(
+                sandbox.Points,
+                new BatchChangeSettings { IntervalMs = 200, BatchSize = 20 },
+                "自检从站");
+
+            string runningText = viewModel.BatchChangeStatusText;
+            // 这三个值必须在停止**之前**取下来：日志是最后才拼的，
+            // 那时候 Stop 已经执行过，直接读控件会把"停止后"的状态写进"运行中"那一栏
+            // （踩过一次：日志写"停止按钮可用=False"，断言却是 PASS，看日志会以为错了）。
+            bool runningFlag = viewModel.IsBatchChanging;
+            bool stopUsable = viewModel.StopBatchChangeCommand.CanExecute(null);
+            bool runningShown = runningFlag
+                && runningText.Contains("批量变化中")
+                && stopUsable
+                && viewModel.BatchChangeTip.Contains("停止");
+
+            // 跑着的时候截一张：状态栏那段提示 + 工具条上的圆点和停止按钮都要在图上
+            Dispatcher.UIThread.RunJobs(DispatcherPriority.Render);
+            Save(mainWindow, Path.Combine(dir, "45-批量变化中-工具条与状态栏.png"));
+
+            viewModel.StopBatchChangeCommand.Execute(null);
+
+            bool stoppedQuiet = !viewModel.IsBatchChanging
+                && viewModel.BatchChangeStatusText.Length == 0
+                && !viewModel.StopBatchChangeCommand.CanExecute(null);
+
+            Log(dir, $"batch-indicator: 空闲时安静={idleQuiet} 运行中提示=\"{runningText}\" "
+                + $"运行标志={runningFlag} 停止按钮可用={stopUsable} "
+                + $"停止后回到安静={stoppedQuiet} => "
+                + ((idleQuiet && runningShown && stoppedQuiet) ? "PASS" : "FAIL"));
         }
 
         /// <summary>
@@ -5795,6 +5871,30 @@ namespace IEC104.App.Views
                     + $"标题=\"{viewModel.WindowTitle}\" 按钮亮主色={((saveGlyph?.Stroke as ISolidColorBrush)?.Color == wantDirty)} => "
                     + (unnamed ? "PASS" : "FAIL"));
 
+                // ── ⑦ 无工程时点「保存」必须转成另存为（1.10.2 修的 bug）──
+                //    之前工具条和菜单绑的是 SaveProjectCommand → SaveProject()，
+                //    而它在 !HasProject 时静默 return false：点保存毫无反应；
+                //    偏偏 Ctrl+S 走的另一条路会弹框。同一个动作两种结果，
+                //    用户的原话是"点击保存按钮，不能弹出提示框去保存成工程"。
+                //    这里注入一个假的另存为回调，只验"命令有没有走到它"——
+                //    自检里不能真弹文件对话框（没人点）。
+                int saveAsAsked = 0;
+                Func<Task<bool>> originalFallback = viewModel.SaveAsFallback;
+                viewModel.SaveAsFallback = () =>
+                {
+                    saveAsAsked++;
+                    return Task.FromResult(false);   // 模拟用户在对话框点了"取消"
+                };
+
+                viewModel.SaveProjectCommand.Execute(null);
+                await Task.Delay(120);               // 命令体是 async void，给它一点时间跑到回调
+
+                viewModel.SaveAsFallback = originalFallback;
+                bool saveAsOk = saveAsAsked == 1;
+
+                Log(dir, $"project-save-unnamed: 无工程点保存→另存为回调命中={saveAsAsked} 次 => "
+                    + (saveAsOk ? "PASS" : "FAIL"));
+
                 // 收尾：把"未命名工程 + 脏"的状态清掉，别把现场留给后续/退出流程
                 viewModel.CloseProject();
                 Dispatcher.UIThread.RunJobs();
@@ -6250,6 +6350,53 @@ namespace IEC104.App.Views
                 + $"单条追加={singleOk}(141) 上限截断={capOk}({view.Records.Count}) => "
                 + ((seedOk && appendOk && singleOk && capOk) ? "PASS" : "FAIL"));
 
+            // ── ③ 选中项要顶得住刷新（用户报的"点了报文，下面还是空的"）──
+            AsduRecord picked = view.Records[3];
+            view.SelectedRecord = picked;
+            string hexBefore = view.SelectedHex;
+
+            // 再推一批（走 Reset）。旧实现在这里会把选中项清成 null，
+            // 表现就是点完报文一二百毫秒后下面又变回"（未选中报文）"。
+            source.AddRange(new[] { MakeRecord(5000), MakeRecord(5001) });
+
+            bool selectionKept = ReferenceEquals(view.SelectedRecord, picked);
+            bool hexKept = view.SelectedHex == hexBefore && hexBefore.Length > 0;
+            bool selectionIsBytes = view.SelectedHex.StartsWith("68", StringComparison.Ordinal);
+
+            Log(dir, $"traffic-selection: 选中={picked.ObjectSummary} "
+                + $"刷新后仍选中={selectionKept} 字节未变={hexKept} 内容是字节={selectionIsBytes} => "
+                + ((selectionKept && hexKept && selectionIsBytes) ? "PASS" : "FAIL"));
+
+            // ── ④ 报文要带值（用户："不要只有类型，那些数据"）──
+            ApplicationLayerParameters parameters = ApplicationLayerParameters.CreateForCs104();
+
+            Asdu switchAsdu = new Asdu(parameters)
+            {
+                TypeId = TypeIdentifier.M_SP_NA_1,
+                Cot = CauseOfTransmission.Spontaneous,
+                CommonAddress = 1
+            };
+            switchAsdu.AddInformationObject(new SinglePointInformation(1001, true));
+            AsduRecord switchRecord = AsduRecord.FromAsdu(switchAsdu, "发", switchAsdu.Encode());
+
+            Asdu measuredAsdu = new Asdu(parameters)
+            {
+                TypeId = TypeIdentifier.M_ME_NC_1,
+                Cot = CauseOfTransmission.Spontaneous,
+                CommonAddress = 1
+            };
+            measuredAsdu.AddInformationObject(new MeasuredValueShort(4001) { Value = 42.5f });
+            AsduRecord measuredRecord = AsduRecord.FromAsdu(measuredAsdu, "发", measuredAsdu.Encode());
+
+            bool switchValueOk = switchRecord.ValueText == "合 (1)";
+            bool measuredValueOk = measuredRecord.ValueText == "42.5";
+            // 原始字节要真的有：M_ME_NC_1 = 13 = 0x0D，旧实现这里恒为空串
+            bool recordHexOk = measuredRecord.Hex.StartsWith("0D", StringComparison.Ordinal);
+
+            Log(dir, $"traffic-value: 遥信值={switchRecord.ValueText} 遥测值={measuredRecord.ValueText} "
+                + $"原始字节头={measuredRecord.Hex.Split(' ')[0]} => "
+                + ((switchValueOk && measuredValueOk && recordHexOk) ? "PASS" : "FAIL"));
+
             view.Detach();
 
             // ── ② 主窗口的缓冲合并：入缓冲不该影响集合，Flush 之后才上屏 ──
@@ -6387,8 +6534,71 @@ namespace IEC104.App.Views
         }
 
         /// <summary>造一条用于自检的报文记录</summary>
-        private static AsduRecord MakeRecord(int index) => new()
+        /// <summary>
+        /// 报文监视截图用的样例数据。
+        ///
+        /// 为什么不直接拿主窗口的 Records：自检跑到这一步时那个缓冲还是空的，
+        /// 截出来是个空窗口——"值"那一列、下面那块原始字节全都看不见，
+        /// 而这两样正是 1.10.2 要展示的东西。这里用真 ASDU 编出字节、
+        /// 值也走同一套解析，截图和断言说的是同一件事。
+        /// </summary>
+        private static TrafficViewModel BuildTrafficSampleModel()
         {
+            ApplicationLayerParameters parameters = ApplicationLayerParameters.CreateForCs104();
+
+            // 遥信（单点合位）
+            Asdu switchAsdu = new(parameters)
+            {
+                TypeId = TypeIdentifier.M_SP_NA_1,
+                Cot = CauseOfTransmission.Spontaneous,
+                CommonAddress = 1
+            };
+            switchAsdu.AddInformationObject(new SinglePointInformation(2003, true));
+
+            // 双点分位（断路器位置）
+            Asdu doubleAsdu = new(parameters)
+            {
+                TypeId = TypeIdentifier.M_DP_NA_1,
+                Cot = CauseOfTransmission.Spontaneous,
+                CommonAddress = 1
+            };
+            doubleAsdu.AddInformationObject(new DoublePointInformation(1002, DoublePointValue.Off));
+
+            // 遥测（带 IV 品质，演示品质位是怎么追加到值后面的）
+            Asdu measuredAsdu = new(parameters)
+            {
+                TypeId = TypeIdentifier.M_ME_NC_1,
+                Cot = CauseOfTransmission.Spontaneous,
+                CommonAddress = 1
+            };
+            measuredAsdu.AddInformationObject(new MeasuredValueShort(4001)
+            {
+                Value = 42.5f,
+                Quality = new QualityDescriptor { Invalid = true }
+            });
+
+            RangeObservableCollection<AsduRecord> source = new();
+            source.AddRange(new[]
+            {
+                AsduRecord.FromAsdu(switchAsdu, "发", switchAsdu.Encode()),
+                AsduRecord.FromAsdu(doubleAsdu, "发", doubleAsdu.Encode()),
+                AsduRecord.FromAsdu(measuredAsdu, "发", measuredAsdu.Encode()),
+                AsduRecord.Note("[自检通道] 链路已建立 192.168.1.10:2404 ← 主站")
+            });
+
+            TrafficViewModel model = new(source);
+
+            // 选中一条有字节的：下面的原始字节要能截出来，
+            // 否则截图上永远是"（未选中报文）"，等于没验到用户报的那个点。
+            if (model.Records.Count > 1)
+            {
+                model.SelectedRecord = model.Records[1];
+            }
+
+            return model;
+        }
+
+        private static AsduRecord MakeRecord(int index) => new()        {
             Direction = index % 2 == 0 ? "发" : "收",
             TypeCode = "M_ME_NC_1",
             TypeName = "短浮点遥测",

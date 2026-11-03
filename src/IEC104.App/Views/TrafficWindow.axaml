@@ -82,18 +82,22 @@
                 AutoGenerateColumns="False" IsReadOnly="True"
                 CanUserReorderColumns="True">
         <DataGrid.Columns>
-          <DataGridTextColumn Header="时间" Binding="{Binding TimeText}" Width="110" />
-          <DataGridTextColumn Header="方向" Binding="{Binding Direction}" Width="60" />
-          <DataGridTextColumn Header="类型" Binding="{Binding TypeCode}" Width="120" />
-          <DataGridTextColumn Header="名称" Binding="{Binding TypeName}" Width="170" />
-          <DataGridTextColumn Header="传送原因" Binding="{Binding CauseText}" Width="140" />
-          <DataGridTextColumn Header="公共地址" Binding="{Binding CommonAddress}" Width="85" />
-          <DataGridTextColumn Header="信息对象" Binding="{Binding ObjectSummary}" Width="*" />
+          <DataGridTextColumn Header="时间" Binding="{Binding TimeText}" Width="100" />
+          <DataGridTextColumn Header="方向" Binding="{Binding Direction}" Width="55" />
+          <DataGridTextColumn Header="类型" Binding="{Binding TypeCode}" Width="105" />
+          <DataGridTextColumn Header="名称" Binding="{Binding TypeName}" Width="140" />
+          <DataGridTextColumn Header="传送原因" Binding="{Binding CauseText}" Width="110" />
+          <DataGridTextColumn Header="公共地址" Binding="{Binding CommonAddress}" Width="80" />
+          <DataGridTextColumn Header="信息对象" Binding="{Binding ObjectSummary}" Width="150" />
+          <!-- 值这一列是用户明确要的：只有类型和点号，看不出"变了多少"。
+               口径与点表一致（合/分、中间态、遥测数值），品质位异常时以 (IV)/(BL) 追加。 -->
+          <DataGridTextColumn Header="值" Binding="{Binding ValueText}" Width="*" MinWidth="120" />
         </DataGrid.Columns>
       </DataGrid>
     </Border>
 
-    <TextBlock Grid.Row="3" Text="选中报文的原始字节" FontWeight="SemiBold" Margin="14,10,0,4" />
+    <TextBlock Grid.Row="3" Text="选中报文的 ASDU 原始字节（不含 APCI 控制域）"
+               FontWeight="SemiBold" Margin="14,10,0,4" />
     <Border Grid.Row="4" Classes="panel" Padding="8" MinHeight="56" Margin="12,0,12,12">
       <SelectableTextBlock Text="{Binding SelectedHex}" TextWrapping="Wrap"
                            FontFamily="Consolas, monospace" FontSize="12" />

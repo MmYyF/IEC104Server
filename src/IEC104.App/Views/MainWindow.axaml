@@ -395,11 +395,25 @@
 
         <Rectangle Width="1" Height="18" Fill="{DynamicResource BorderLineBrush}" Margin="6,0" />
 
-        <Button Classes="tool accent" Click="OnBatchChangeClick" ToolTip.Tip="批量变化数据点（随机范围 / 固定步长）">
+        <!-- 批量变化（1.10.2）：提示点 + 停止按钮。
+             点进来一眼看到的顺序是"图标 → 文字 → 一颗小圆点"，圆点亮着就是还在变。
+             停止按钮**只在变化时出现**：常驻会让整排多出一颗"永远是禁用色"的灰方块，
+             违反"整排一个墨色"（实测被 toolbar-icon-ink 断言拦下，偏离 #ff9aa6b2），
+             而且白占一格宽度。代价是出现时后面的按钮右移一格——但那一刻用户
+             刚点了"开始变化"，多出来的控件正好是他要找的东西。 -->
+        <Button Classes="tool accent" Click="OnBatchChangeClick" ToolTip.Tip="{Binding BatchChangeTip}">
           <StackPanel Orientation="Horizontal" Spacing="6">
             <ctl:MenuGlyph Classes="toolIcon solid" Data="{StaticResource IconBatch}" />
             <TextBlock Text="批量变化" VerticalAlignment="Center" />
+            <Ellipse Width="6" Height="6" Fill="{DynamicResource PrimaryBrush}"
+                     IsVisible="{Binding IsBatchChanging}" VerticalAlignment="Center" />
           </StackPanel>
+        </Button>
+        <Button Classes="toolIconOnly" x:Name="StopBatchChangeButton"
+                IsVisible="{Binding IsBatchChanging}"
+                Command="{Binding StopBatchChangeCommand}"
+                ToolTip.Tip="停止批量变化（关掉参数窗口之后也还能停）">
+          <ctl:MenuGlyph Classes="toolIcon solid" Data="{StaticResource IconStop}" />
         </Button>
         <Button Classes="tool" Click="OnFrame104Click" ToolTip.Tip="报文解析">
           <StackPanel Orientation="Horizontal" Spacing="6">
@@ -433,7 +447,7 @@
          ④ 整行固定 30 高、左右内边距 8、上下内边距 0，所有子元素
             VerticalAlignment=Center，保证文字真的在栏内居中而不是"骑"在下沿。 -->
     <Border Grid.Row="3" Classes="statusbar" x:Name="StatusBar">
-      <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto">
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto">
         <!-- Tag 是当前状态的显式标记：初始展开 -> "collapse"（提示将来可以收起）。
              只靠图标看不出来，自检要拿它判断图标到底翻没翻。 -->
         <Button Grid.Column="0" Classes="statusToggle" x:Name="SidebarToggleButton"
@@ -482,10 +496,24 @@
           </StackPanel>
         </Border>
 
-        <TextBlock Grid.Column="4" Classes="hint" Text="{Binding RunningSummary}"
+        <!-- 批量变化中（1.10.2）：关掉参数窗口之后，用户就靠这一段确认"还在变"，
+             所以轮次是活的（每轮都会刷）。没有在变时整段不占位。 -->
+        <Border Grid.Column="4" IsVisible="{Binding IsBatchChanging}"
+                VerticalAlignment="Center" Margin="0,0,12,0"
+                ToolTip.Tip="{Binding BatchChangeTip}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Ellipse Width="6" Height="6" Fill="{DynamicResource PrimaryBrush}"
+                     VerticalAlignment="Center" />
+            <TextBlock Text="{Binding BatchChangeStatusText}" FontSize="11"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       VerticalAlignment="Center" />
+          </StackPanel>
+        </Border>
+
+        <TextBlock Grid.Column="5" Classes="hint" Text="{Binding RunningSummary}"
                    VerticalAlignment="Center" Margin="0,0,14,0" />
 
-        <TextBlock Grid.Column="5" Classes="statusBrand" Text="IEC104-Server"
+        <TextBlock Grid.Column="6" Classes="statusBrand" Text="IEC104-Server"
                    VerticalAlignment="Center" />
       </Grid>
     </Border>

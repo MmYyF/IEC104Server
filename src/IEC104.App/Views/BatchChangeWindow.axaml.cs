@@ -42,8 +42,10 @@ namespace IEC104.App.Views
 
         protected override void OnClosed(System.EventArgs e)
         {
-            // 关窗即停：不能让定时器在窗口没了之后还继续往从站写值
-            ViewModel?.Dispose();
+            // 只断开事件，**不停止变化**：变化归主窗口那个会话管，
+            // 关掉参数界面之后数据要接着变（用户明确要求）。
+            // 停止按钮在窗口里、工具条上、状态栏里都有。
+            ViewModel?.Detach();
             base.OnClosed(e);
         }
     }

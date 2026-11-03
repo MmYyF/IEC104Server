@@ -267,6 +267,23 @@ namespace IEC104.App.Views
 
         private MainWindowViewModel ViewModel => DataContext as MainWindowViewModel;
 
+        /// <summary>
+        /// 把"没有工程文件时要另存为"这个动作接到 ViewModel 上。
+        ///
+        /// 为什么不在 XAML 里直接让按钮 Click 到视图方法：保存按钮的可用状态
+        /// （无改动时灰着、写盘中禁用）是靠 `SaveProjectCommand.CanExecute` 表达的，
+        /// 改成 Click 就整个丢掉那套三态。所以命令留着，只在"需要弹框"这一步回调出来。
+        /// </summary>
+        protected override void OnDataContextChanged(EventArgs e)
+        {
+            base.OnDataContextChanged(e);
+
+            if (DataContext is MainWindowViewModel viewModel)
+            {
+                viewModel.SaveAsFallback = SaveProjectAsAsync;
+            }
+        }
+
         protected override void OnOpened(EventArgs e)
         {
             base.OnOpened(e);
@@ -1079,9 +1096,17 @@ namespace IEC104.App.Views
                 return;
             }
 
-            BatchChangeViewModel dialogModel = new(slave.Points);
+            // 会话是主窗口的：窗口只负责"勾哪些点、什么参数"，
+            // 关掉它之后变化照旧（1.10.2）。
+            BatchChangeViewModel dialogModel = new(viewModel.BatchChange, slave.Points);
             BatchChangeWindow window = new() { DataContext = dialogModel };
             _ = window.ShowDialog(this);
+        }
+
+        /// <summary>工具条上的停止按钮：停下来但不动点表、不关任何窗口</summary>
+        private void OnStopBatchChangeClick(object sender, RoutedEventArgs e)
+        {
+            ViewModel?.StopBatchChangeCommand?.Execute(null);
         }
 
         // ── 初始化数据 ──────────────────────────────────────────

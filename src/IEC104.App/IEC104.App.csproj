@@ -74,8 +74,8 @@
                 工具条最左加保存按钮（有改动亮主题主色）、状态栏显示未保存/已保存时刻，
                 标题栏带工程名与 ● 脏标记；启动自动恢复上次工程并显示欢迎页，
                 欢迎页给继续编辑 / 新建 / 打开 / 最近使用；新增「按初始值复位」 -->
-    <Version>1.10.1</Version>
-    <FileVersion>1.10.1.0</FileVersion>
+    <Version>1.10.2</Version>
+    <FileVersion>1.10.2.0</FileVersion>
     <Product>IEC104-Server</Product>
     <AssemblyTitle>IEC104-Server</AssemblyTitle>
     <Description>IEC 60870-5-101/104 从站仿真工具</Description>

@@ -28,6 +28,9 @@ namespace IEC104.App.ViewModels
         private int _directionIndex;
         private AsduRecord _selectedRecord;
 
+        /// <summary>正在把选中项推回控件（用于跳出"清空 → 推回 → 又清空"的循环）</summary>
+        private bool _restoringSelection;
+
         public TrafficViewModel(ObservableCollection<AsduRecord> source)
         {
             _source = source ?? new ObservableCollection<AsduRecord>();
@@ -86,6 +89,21 @@ namespace IEC104.App.ViewModels
             get => _selectedRecord;
             set
             {
+                // 【为什么要把 null 挡回去】列表每 150 ms 合并刷新一次，走的是
+                // ReplaceAll（集合 Reset）。Reset 会让 DataGrid 把选中项清成 null，
+                // 再顺着双向绑定回写到这儿——**这不是用户取消选择**。
+                // 不挡的话现象是：点中一条报文，还没看清下面的原始字节，
+                // 一个刷新周期（一二百毫秒）之后又变回"（未选中报文）"，
+                // 报文越密集越明显。用户报的就是这个。
+                if (value == null
+                    && _selectedRecord != null
+                    && !_restoringSelection
+                    && Records.Contains(_selectedRecord))
+                {
+                    ReassertSelection();
+                    return;
+                }
+
                 if (SetField(ref _selectedRecord, value))
                 {
                     OnPropertyChanged(nameof(SelectedHex));
@@ -93,8 +111,69 @@ namespace IEC104.App.ViewModels
             }
         }
 
-        /// <summary>选中报文对应的原始字节，便于和抓包工具比对</summary>
-        public string SelectedHex => _selectedRecord?.Hex ?? "（未选中报文）";
+        /// <summary>把选中项重新推回控件（Reset 之后控件那边已经是 null 了）</summary>
+        private void ReassertSelection()
+        {
+            _restoringSelection = true;
+            try
+            {
+                OnPropertyChanged(nameof(SelectedRecord));
+            }
+            finally
+            {
+                _restoringSelection = false;
+            }
+        }
+
+        /// <summary>
+        /// 整体换源，并保住用户选中的那条。
+        ///
+        /// 除了视觉上的高亮，真正被 Reset 打断的是下面那块"选中报文的原始字节"——
+        /// 选中项一丢，它就退回占位文字，看起来像"点了没反应"。
+        /// 选中项如果已经被缓冲上限挤掉，那就确实没什么可显示，清掉。
+        /// </summary>
+        private void ReplaceRows(List<AsduRecord> rows)
+        {
+            AsduRecord keep = _selectedRecord;
+
+            _restoringSelection = true;
+            try
+            {
+                Records.ReplaceAll(rows);
+            }
+            finally
+            {
+                _restoringSelection = false;
+            }
+
+            if (keep == null)
+            {
+                return;
+            }
+
+            if (rows.Contains(keep))
+            {
+                ReassertSelection();
+            }
+            else if (!ReferenceEquals(_selectedRecord, null))
+            {
+                _selectedRecord = null;
+                OnPropertyChanged(nameof(SelectedRecord));
+                OnPropertyChanged(nameof(SelectedHex));
+            }
+        }
+
+        /// <summary>
+        /// 选中报文对应的原始字节，便于和抓包工具比对。
+        ///
+        /// 三种状态要能分清（之前空白一片，用户无从判断）：
+        /// 没选中 / 这条本来就没字节（链路事件、编码失败）/ 有字节。
+        /// </summary>
+        public string SelectedHex => _selectedRecord == null
+            ? "（未选中报文）"
+            : string.IsNullOrEmpty(_selectedRecord.Hex)
+                ? "（这条记录没有原始字节：链路事件，或编码失败）"
+                : _selectedRecord.Hex;
 
         public string CountText => $"共 {Records.Count} 条（源 {_source.Count} 条）";
 
@@ -137,7 +216,7 @@ namespace IEC104.App.ViewModels
                     merged.Add(Records[index]);
                 }
 
-                Records.ReplaceAll(merged);
+                ReplaceRows(merged);
                 OnPropertyChanged(nameof(CountText));
             }
             else if (e.Action == NotifyCollectionChangedAction.Reset)
@@ -162,7 +241,7 @@ namespace IEC104.App.ViewModels
                 }
             }
 
-            Records.ReplaceAll(view);
+            ReplaceRows(view);
             OnPropertyChanged(nameof(CountText));
         }
 

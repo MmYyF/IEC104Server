@@ -234,8 +234,15 @@ namespace IEC104.App.ViewModels
             BatchCreateSlaveCommand = new RelayCommand(() => ShowBatchCreateSlaveDialog?.Invoke());
 
             // ── 工程（1.10）──
-            SaveProjectCommand = new RelayCommand(() => SaveProject(), () => CanSaveProject);
+            SaveProjectCommand = new RelayCommand(ExecuteSaveCommand, () => CanSaveProject);
             CloseProjectCommand = new RelayCommand(() => ShowCloseProjectRequest?.Invoke(), () => HasProject);
+
+            // 批量变化会话：驱动器跟着主窗口走，关掉参数窗口后变化继续。
+            // 订阅它的是"工具条提示 + 状态栏提示 + 停止按钮可用性"这三处显示。
+            BatchChange = new BatchChangeSession();
+            BatchChange.StateChanged += OnBatchChangeStateChanged;
+            StopBatchChangeCommand = new RelayCommand(() => BatchChange.Stop(), () => IsBatchChanging);
+
             ResetToInitValueCommand = new RelayCommand(ConfirmResetToInitValue, () => SelectedSlave != null);
             DismissWelcomeCommand = new RelayCommand(() => IsWelcomeVisible = false);
 
@@ -302,6 +309,8 @@ namespace IEC104.App.ViewModels
         /// <summary>清空到"没有工程"的状态并显示欢迎页</summary>
         private void ResetToEmptyWelcome()
         {
+            BatchChange.Stop();
+
             _suppressDirty = true;
             try
             {
@@ -1040,6 +1049,53 @@ namespace IEC104.App.ViewModels
         /// <summary>收起欢迎页（「继续编辑」）</summary>
         public ICommand DismissWelcomeCommand { get; }
 
+        // ── 批量变化（1.10.2：会话上提到这里，关窗不停）──────────
+
+        /// <summary>
+        /// 批量变化会话。归主窗口所有，**不归批量变化窗口**——
+        /// 关掉参数界面后数据要接着变（用户要求），所以驱动器不能跟着窗口释放。
+        /// </summary>
+        public BatchChangeSession BatchChange { get; }
+
+        /// <summary>正在批量变化：工具条提示点、状态栏那一段、停止按钮都看这个</summary>
+        public bool IsBatchChanging => BatchChange.IsRunning;
+
+        /// <summary>停止批量变化（工具条停止按钮用；窗口里那颗按钮走它自己的命令）</summary>
+        public ICommand StopBatchChangeCommand { get; }
+
+        /// <summary>状态栏里那一段提示：谁在变、第几轮、节拍多少</summary>
+        public string BatchChangeStatusText
+        {
+            get
+            {
+                if (!IsBatchChanging)
+                {
+                    return string.Empty;
+                }
+
+                string slave = string.IsNullOrEmpty(BatchChange.TargetSlaveName)
+                    ? string.Empty
+                    : BatchChange.TargetSlaveName + " · ";
+                string size = BatchChange.AllPoints
+                    ? "全部点"
+                    : $"{BatchChange.BatchSize} 点";
+                // 第一轮还没跑完时显示"刚启动"：写"第 0 轮"看着像没起来
+                string round = BatchChange.RoundCount == 0
+                    ? "刚启动"
+                    : $"第 {BatchChange.RoundCount} 轮";
+                return $"批量变化中 · {slave}{round} · {size}/{BatchChange.IntervalMs} ms";
+            }
+        }
+
+        /// <summary>批量变化按钮的悬停提示：跑着的时候把参数和轮次说清</summary>
+        public string BatchChangeTip => IsBatchChanging
+            ? $"正在批量变化：每 {BatchChange.IntervalMs} ms 变 " +
+              $"{(BatchChange.AllPoints ? "全部" : BatchChange.BatchSize.ToString())} 个点，" +
+              $"已 {BatchChange.RoundCount} 轮、累计 {BatchChange.ChangedCount} 次。" +
+              "参数窗口可以关掉，变化不会停；点右边的方块停止。"
+            : "批量变化数据点（随机范围 / 固定步长）";
+
+
         // ── 欢迎页（1.10）──────────────────────────────────────
 
         /// <summary>最近使用的工程，最多 5 条，最新的在最前</summary>
@@ -1249,6 +1305,53 @@ namespace IEC104.App.ViewModels
         /// 按钮不该因为"还没选存放位置"就灰着——那会让用户以为改动不算数。
         public bool CanSaveProject => !_isSaving && (_isProjectDirty || _isValueDirty);
 
+        /// <summary>
+        /// "没有工程文件时另存为"的出口，由视图层注入（ViewModel 不能弹文件对话框）。
+        ///
+        /// 【为什么要有这个回调】1.10.1 之前工具条和菜单的「保存」都直接绑
+        /// `SaveProjectCommand` → `SaveProject()`，而后者在 `!HasProject` 时
+        /// **静默返回 false**：点了保存什么也不发生。偏偏 Ctrl+S 走的是另一条路
+        /// （视图层 `SaveProjectAsync`，会转 `SaveProjectAsAsync` 弹框），
+        /// 于是出现"Ctrl+S 能存、点按钮没反应"这种最难解释的现象。
+        /// 现在两条路径合到一处：命令只管"有没有工程"，弹框交给视图。
+        /// </summary>
+        public Func<System.Threading.Tasks.Task<bool>> SaveAsFallback { get; set; }
+
+        /// <summary>
+        /// 「保存」命令的执行体（工具条按钮 / 文件菜单 / Ctrl+S 共用同一套语义）。
+        /// </summary>
+        private async void ExecuteSaveCommand()
+        {
+            if (HasProject)
+            {
+                try
+                {
+                    SaveProject();
+                }
+                catch (Exception exception)
+                {
+                    StatusText = $"保存工程失败：{exception.Message}";
+                }
+                return;
+            }
+
+            if (SaveAsFallback != null)
+            {
+                try
+                {
+                    await SaveAsFallback();
+                }
+                catch (Exception exception)
+                {
+                    StatusText = $"保存工程失败：{exception.Message}";
+                }
+                return;
+            }
+
+            // 没接上视图（理论上只有自检里才会发生）：至少说清为什么没存。
+            StatusText = "当前还没有工程文件，请用「文件 → 另存为」指定保存位置";
+        }
+
         /// <summary>保存按钮的悬停提示，带工程名（用户要能确认"存到哪个文件"）</summary>
         public string SaveProjectTip
         {
@@ -1441,6 +1544,21 @@ namespace IEC104.App.ViewModels
         }
 
         /// <summary>
+        /// 批量变化会话状态变了：工具条提示点、状态栏那一段、停止按钮的可用性。
+        ///
+        /// 每轮都会调到这里（会话把每轮的完成事件转成 StateChanged），
+        /// 所以状态栏的"第 N 轮"是活的——这也是关掉窗口之后，用户唯一能确认
+        /// "它还在动"的地方，必须准。
+        /// </summary>
+        private void OnBatchChangeStateChanged()
+        {
+            OnPropertyChanged(nameof(IsBatchChanging));
+            OnPropertyChanged(nameof(BatchChangeStatusText));
+            OnPropertyChanged(nameof(BatchChangeTip));
+            (StopBatchChangeCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        /// <summary>
         /// 防抖到期后的静默写盘。
         ///
         /// **不碰状态栏左边那行操作日志**：值每几秒落一次盘，要是每次都写一句
@@ -1553,6 +1671,10 @@ namespace IEC104.App.ViewModels
         /// </summary>
         public int OpenProject(string path)
         {
+            // 换工程前先停批量变化：变化目标是一批 PointViewModel 的引用，
+            // 换掉点表之后那些对象就不在界面上了，还在写值等于往空气里改。
+            BatchChange.Stop();
+
             string documentName;
             int pointCount;
 
@@ -1595,6 +1717,8 @@ namespace IEC104.App.ViewModels
         /// </summary>
         public void CreateProject(string path, string projectName, bool withSamplePoints)
         {
+            BatchChange.Stop();
+
             _suppressDirty = true;
             try
             {
@@ -1635,6 +1759,10 @@ namespace IEC104.App.ViewModels
         /// </summary>
         public void CloseProject()
         {
+            // 关工程 = 点表要没了，批量变化必须先停，否则定时器会继续往
+            // 已经不在界面上的 PointViewModel 写值（状态栏却还显示"变化中"）。
+            BatchChange.Stop();
+
             _suppressDirty = true;
             try
             {

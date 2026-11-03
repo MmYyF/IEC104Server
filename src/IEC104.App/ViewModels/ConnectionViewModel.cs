@@ -537,9 +537,26 @@ namespace IEC104.App.ViewModels
             return null;
         }
 
-        /// <summary>发送一个 ASDU：优先定向回当前交互的连接，否则广播</summary>
-        private void SendAsdu(Asdu asdu, SlaveViewModel slave)
+        /// <summary>
+        /// 给报文监视编码一份 ASDU 原始字节（不含 APCI，APCI 是逐帧的序号/长度，不归 ASDU 管）。
+        ///
+        /// 监视是旁路：编码失败（地址超宽之类）绝不能把收发带下去，
+        /// 拿不到就记空——面板里会明确写"这条记录没有原始字节"，而不是留一片白。
+        /// </summary>
+        private static byte[] EncodeForMonitor(Asdu asdu)
         {
+            try
+            {
+                return asdu?.Encode();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>发送一个 ASDU：优先定向回当前交互的连接，否则广播</summary>
+        private void SendAsdu(Asdu asdu, SlaveViewModel slave)        {
             if (_server == null)
             {
                 return;
@@ -566,7 +583,10 @@ namespace IEC104.App.ViewModels
                 return;
             }
 
-            OnAsduRecorded(AsduRecord.FromAsdu(asdu, "发", null), slave);
+            // 原始字节要真的带上：1.10.1 之前这里恒传 null，
+            // 于是报文监视下面那块"原始字节"永远是一片空白——
+            // 面板上没有任何东西，用户根本分不清是"没选中"还是"取不到"。
+            OnAsduRecorded(AsduRecord.FromAsdu(asdu, "发", EncodeForMonitor(asdu)), slave);
         }
 
         /// <summary>
@@ -585,7 +605,7 @@ namespace IEC104.App.ViewModels
                 return;
             }
 
-            OnAsduRecorded(AsduRecord.FromAsdu(asdu, "收", null), target);
+            OnAsduRecorded(AsduRecord.FromAsdu(asdu, "收", EncodeForMonitor(asdu)), target);
 
             try
             {
