@@ -7118,12 +7118,18 @@ namespace IEC104.App.Views
                     && parsedRelease.Asset.Name == "IEC104-Server.exe"
                     && parsedRelease.ReleasePageUrl == "https://example.com/rel";
 
+                // 带 BOM 的清单也必须能解析：PS 5.1 的 Set-Content -Encoding utf8 就会写 BOM，
+                // 而镜像可能是用别的工具传的。System.Text.Json 遇到开头的 U+FEFF 会直接抛。
+                UpdateInfo bomParsed = UpdateService.ParseManifest("\uFEFF" + manifest, "镜像", string.Empty);
+                bool bomOk = bomParsed != null && bomParsed.Version == "9.9.9";
+
                 Log(dir, "update-parse: 清单=" + Trim(parsedManifest?.Version)
                     + "/" + parsedManifest?.Notes.Count + "条"
                     + " 发布=" + Trim(parsedRelease?.Version)
                     + "/" + parsedRelease?.Notes.Count + "条"
                     + " 资产=" + Trim(parsedRelease?.Asset?.Name)
-                    + " 说明只取条目行=True => " + (parseOk ? "PASS" : "FAIL"));
+                    + " 带BOM可解析=" + bomOk
+                    + " 说明只取条目行=True => " + (parseOk && bomOk ? "PASS" : "FAIL"));
 
                 // ── ② 多源回退：第一个能应答的源说了算 ──
                 transport.Reset(url => url.Contains("mirror")

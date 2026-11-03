@@ -363,6 +363,7 @@ namespace IEC104.App.Services
         /// <summary>解析 update.json（镜像与 GitHub 附件共用这一种格式）。</summary>
         public static UpdateInfo ParseManifest(string json, string sourceName, string releasePageUrl)
         {
+            json = StripBom(json);
             if (string.IsNullOrWhiteSpace(json))
             {
                 return null;
@@ -441,6 +442,7 @@ namespace IEC104.App.Services
         /// <summary>解析 GitHub API 的 releases/latest。</summary>
         public static UpdateInfo ParseGitHubRelease(string json, string sourceName)
         {
+            json = StripBom(json);
             if (string.IsNullOrWhiteSpace(json))
             {
                 return null;
@@ -558,6 +560,17 @@ namespace IEC104.App.Services
                 return null;
             }
         }
+
+        /// <summary>
+        /// 去掉可能存在的 UTF-8 BOM。
+        ///
+        /// 谁会带 BOM：Windows PowerShell 5.1 的 `Set-Content -Encoding utf8` 会写 BOM，
+        /// 而 pwsh 7 不写；镜像如果是用别的工具上传的也可能带。JSON 标准不允许 BOM，
+        /// System.Text.Json 遇到开头的 U+FEFF 会直接抛——表现是"内容看不懂"，
+        /// 用户看到的原因却完全对不上。一行 TrimStart 省掉一整类玄学问题。
+        /// </summary>
+        private static string StripBom(string text) =>
+            string.IsNullOrEmpty(text) ? text : text.TrimStart('\uFEFF');
 
         private static bool TryParseRepository(out string owner, out string repo)
         {
