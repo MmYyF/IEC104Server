@@ -20,8 +20,14 @@ x86/
 [Ll]ogs/
 
 # publish 输出（单文件 45MB，每次发版都变）
+#
+# 注意别写 `publish*/`：git 在 Windows 上按 core.ignorecase 做大小写不敏感匹配，
+# 这条会把 **Properties/PublishProfiles/** 一起吃掉——发布配置（*.pubxml）就
+# 静默地没进仓库。现象是本地 build.bat 一切正常、CI 里 publish 掉回普通
+# 多文件发布（先来一条 NETSDK1198 warning），然后"只允许一个 exe"的断言失败。
+# 所以这里只匹配带连字符的变体，不碰 PublishProfiles。
 publish/
-publish*/
+publish-*/
 pubfix/
 *.publishproj
 
