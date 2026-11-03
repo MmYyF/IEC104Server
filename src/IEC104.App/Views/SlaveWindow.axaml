@@ -69,6 +69,10 @@
           </ItemsControl>
         </ScrollViewer>
 
+        <!-- 网卡那一段：改 IP 的时候顺手能改"加在哪块网卡上"。
+             两个调用点共用同一个面板，措辞和校验因此不会漂移。 -->
+        <views:NicPickerPanel x:Name="OwnerNicPanel" DataContext="{Binding AddressPlan}" />
+
         <!-- 通道正在跑的时候改端点必须停一下才生效，这句得说出来，
              否则用户改完发现主站连不上会以为是填错了 -->
         <TextBlock Classes="hint" TextWrapping="Wrap" IsVisible="{Binding OwnerChannelIsOpen}"
@@ -160,6 +164,11 @@
             </ItemsControl.ItemTemplate>
           </ItemsControl>
         </ScrollViewer>
+
+        <!-- 网卡与"启动时自动添加"：只对 104（TCP）有意义，101 走串口没有 IP -->
+        <StackPanel IsVisible="{Binding ShowAddressPlan}" Margin="20,0,0,0">
+          <views:NicPickerPanel x:Name="NewNicPanel" DataContext="{Binding AddressPlan}" />
+        </StackPanel>
 
         <!-- 新建通道时的链路参数与报文长度：与"单独建通道"可配的内容完全一致 -->
         <Border Height="1" Background="{DynamicResource BorderLineBrush}"

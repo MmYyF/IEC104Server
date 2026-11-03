@@ -21,6 +21,19 @@ namespace IEC104.App
         [STAThread]
         public static void Main(string[] args)
         {
+            // ── 提权子进程入口（1.11）─────────────────────────────
+            //
+            // 必须放在一切初始化之前：这个分支不建 Avalonia、不读设置、不开窗口，
+            // 干完就退。放在 Avalonia 后面会变成"为了加一个 IP，又起了一个完整界面进程"，
+            // 而且子进程和父进程抢同一个 settings.json / 单实例互斥。
+            //
+            // 它是以 runas 启动的，UAC 已经在这一步授权过了，netsh 才跑得通。
+            if (Services.IpHelperProtocol.IsInvocation(args))
+            {
+                Environment.ExitCode = Services.IpHelperProtocol.Run(args);
+                return;
+            }
+
             InstallCrashLogging();
             Trace("main-enter args=" + string.Join(' ', args));
 

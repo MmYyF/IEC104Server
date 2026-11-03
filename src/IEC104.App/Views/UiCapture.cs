@@ -168,6 +168,10 @@ namespace IEC104.App.Views
             // 验证批量创建从站（IP 递增 / 进位 / 端口递增 / 冲突跳过）
             RunBatchCreateSelfCheck(dir, viewModel);
 
+            // 1.11：本机网卡与 IP（枚举 / 计划文案 / 添加与跳过 / 账本 / 10049 翻译 /
+            // 回退 0.0.0.0 / 提权参数判定 / 管理窗口）。执行通道换成假的，绝不真动系统
+            await RunIpAddressSelfCheckAsync(dir, viewModel);
+
             // 验证信号区分组：按 ASDU 类型 ⇄ 按电力大类，两种都要验
             RunPointTabSelfCheck(dir, viewModel, mainWindow);
 
@@ -6651,6 +6655,278 @@ namespace IEC104.App.Views
             bitmap.Render(window);
             bitmap.Save(path);
             Log(Path.GetDirectoryName(path), $"saved {Path.GetFileName(path)} {width}x{height}");
+        }
+
+        /// <summary>
+        /// 自检（1.11）：本机网卡 / IP 地址 / 账本，以及"启动前确保地址存在"整条链路。
+        ///
+        /// 【为什么必须换掉执行通道】真加地址要提权，自检是无人值守的——弹一次 UAC
+        /// 就永久卡在那。所以先把 <see cref="IpAddressService.Editor"/> 换成假的
+        /// （只记录请求、按脚本成功或失败），跑完再换回去。
+        /// 这也正是当初把"动系统"抽成 <see cref="IIpAddressEditor"/> 的唯一理由：
+        /// 凡是需要人工授权或交互的动作，都要留一个可替换的接缝，否则自检只能覆盖到界面。
+        ///
+        /// 【账本要备份】添加成功会往 settings.json 里记一条账，那是真实文件。
+        /// 自检跑完必须还原，否则用户下次打开"IP 地址管理"会看到一条自检留下的记录，
+        /// 而且是删不掉的（那个地址本来就不在本机）。
+        /// </summary>
+        private static async Task RunIpAddressSelfCheckAsync(string dir, MainWindowViewModel viewModel)
+        {
+            // 一个几乎不可能出现在本机的地址（TEST-NET-2，专供文档示例）
+            const string TestAddress = "198.51.100.77";
+
+            IpAddressService service = IpAddressService.Shared;
+            IIpAddressEditor originalEditor = service.Editor;
+            FakeIpAddressEditor fake = new();
+            service.Editor = fake;
+
+            List<ManagedAddress> ledgerBackup = AppSettingsStore.Current.ManagedAddresses.ToList();
+            string nicBackup = AppSettingsStore.Current.DefaultNicId;
+
+            try
+            {
+                // ① 网卡枚举：本机至少有一块，且回环被排除
+                IReadOnlyList<NicInfo> nics = service.ListNics();
+                bool loopbackExcluded = nics.All(n =>
+                    (n.Description ?? string.Empty).IndexOf("Loopback", StringComparison.OrdinalIgnoreCase) < 0);
+
+                Log(dir, $"ip-list-nics: 网卡 {nics.Count} 块（已连接 {nics.Count(n => n.IsUp)}，"
+                    + $"虚拟 {nics.Count(n => n.IsVirtual)}）回环已排除={loopbackExcluded} => "
+                    + (nics.Count > 0 && loopbackExcluded ? "PASS" : "FAIL"));
+
+                NicInfo nic = nics.FirstOrDefault(n => n.IsUp && !n.IsVirtual)
+                    ?? nics.FirstOrDefault(n => n.IsUp)
+                    ?? nics.FirstOrDefault();
+
+                if (nic == null)
+                {
+                    Log(dir, "ip-*: 跳过（本机没有可用网卡）");
+                    return;
+                }
+
+                // ② 地址计划文案：三种状态各验一句（全部网卡 / 本机没有 / 启动时添加）
+                (string allText, bool allWarn) = IpAddressService.DescribePlan("0.0.0.0", null, false);
+                (string missingText, bool missingWarn) = IpAddressService.DescribePlan(TestAddress, nic.Id, false);
+                (string willAddText, bool willAddWarn) = IpAddressService.DescribePlan(TestAddress, nic.Id, true);
+
+                bool planOk = allText.Contains("全部网卡") && !allWarn
+                    && missingWarn && missingText.Contains("本机没有")
+                    && !willAddWarn && willAddText.Contains("启动时添加");
+
+                Log(dir, $"ip-plan-text: 全部网卡=[{allText}] 缺失=[{missingText}] 将添加=[{willAddText}] => "
+                    + (planOk ? "PASS" : "FAIL"));
+
+                // ③ 添加：请求真的发出去了、账本真的记上了
+                IpChangeResult added = await service
+                    .EnsureAsync(TestAddress, nic.Id, IpMask.DefaultMask, "自检");
+
+                string firstAction = fake.Requests.Count > 0 ? fake.Requests[0].Action : "(无)";
+                bool ledgerHas = AppSettingsStore.Current.ManagedAddresses
+                    .Any(item => item.Address == TestAddress);
+
+                bool addOk = added.Ok && !added.AlreadyExists
+                    && firstAction == "add" && ledgerHas;
+
+                Log(dir, $"ip-ensure-add: 结果={added.Ok} 请求={firstAction} 账本已记={ledgerHas} "
+                    + $"消息=[{added.Message}] => " + (addOk ? "PASS" : "FAIL"));
+
+                // ④ 同一个地址再加一次：账本不能记出两条（"地址列表里两行一模一样"很难解释）
+                int ledgerBefore = AppSettingsStore.Current.ManagedAddresses.Count;
+                await service.EnsureAsync(TestAddress, nic.Id, IpMask.DefaultMask, "自检");
+                bool dedupe = AppSettingsStore.Current.ManagedAddresses.Count == ledgerBefore;
+
+                Log(dir, $"ip-ledger-dedupe: 账本 {ledgerBefore} → "
+                    + $"{AppSettingsStore.Current.ManagedAddresses.Count} => "
+                    + (dedupe ? "PASS" : "FAIL"));
+
+                // ⑤ 本机已有就跳过：判据是"任一网卡上已有"，不是只看目标网卡
+                string localAddress = nics
+                    .SelectMany(item => item.Addresses)
+                    .Select(item => item.Address)
+                    .FirstOrDefault();
+
+                if (localAddress == null)
+                {
+                    Log(dir, "ip-ensure-skip: 跳过（本机没有任何 IPv4）");
+                }
+                else
+                {
+                    int requestBefore = fake.Requests.Count;
+                    IpChangeResult skipped = await service
+                        .EnsureAsync(localAddress, nic.Id, IpMask.DefaultMask, "自检");
+
+                    bool skipOk = skipped.Ok && skipped.AlreadyExists
+                        && fake.Requests.Count == requestBefore;
+
+                    Log(dir, $"ip-ensure-skip: {localAddress} 已有={skipped.AlreadyExists} "
+                        + $"未发请求={fake.Requests.Count == requestBefore} => "
+                        + (skipOk ? "PASS" : "FAIL"));
+                }
+
+                // ⑥ 清理：只动账本里的，删完账本要空
+                IReadOnlyList<IpChangeResult> removed = await service
+                    .RemoveManagedAsync(AppSettingsStore.Current.ManagedAddresses.ToList());
+
+                bool deleteSent = fake.Requests.Any(item => item.Action == "delete");
+                bool cleanupOk = removed.Count > 0 && removed.All(item => item.Ok)
+                    && deleteSent && AppSettingsStore.Current.ManagedAddresses.Count == 0;
+
+                Log(dir, $"ip-cleanup: 删除 {removed.Count} 条 发出delete={deleteSent} "
+                    + $"账本剩 {AppSettingsStore.Current.ManagedAddresses.Count} => "
+                    + (cleanupOk ? "PASS" : "FAIL"));
+
+                // ⑦ 10049 翻译：本机没有的地址上开监听，必须说清"本机没这个地址"
+                //    （原来混成一句"启动连接失败"，用户只能去猜）
+                ConnectionViewModel broken = new()
+                {
+                    Name = "自检-无地址",
+                    BindAddress = TestAddress,
+                    Port = 24040
+                };
+
+                string socketError = null;
+                try
+                {
+                    broken.Open();
+                }
+                catch (Exception exception)
+                {
+                    socketError = exception.Message;
+                }
+
+                bool socketOk = socketError != null
+                    && socketError.Contains("10049")
+                    && socketError.Contains("本机没有");
+
+                Log(dir, $"ip-socket-10049: 报错=[{Trim(socketError)}] => "
+                    + (socketOk ? "PASS" : "FAIL"));
+
+                // ⑧ 没开"自动添加"时，启动前就该拒绝并说清楚怎么改
+                string prepareError = null;
+                try
+                {
+                    await broken.PrepareAddressAsync();
+                }
+                catch (Exception exception)
+                {
+                    prepareError = exception.Message;
+                }
+
+                bool rejectOk = prepareError != null
+                    && prepareError.Contains("本机没有")
+                    && prepareError.Contains("自动添加");
+
+                Log(dir, $"ip-start-reject: 报错=[{Trim(prepareError)}] => "
+                    + (rejectOk ? "PASS" : "FAIL"));
+
+                // ⑨ 加了自动添加但提权失败 → 回退 0.0.0.0，且**三处都写明**
+                //    （通道状态 / 状态栏 / 日志；这里验前两处，日志由 LinkEvent 带出去）
+                fake.ForcedFailure = "自检模拟：提权被拒";
+                broken.NicId = nic.Id;
+                broken.AutoAddAddress = true;
+
+                string reason = await broken.PrepareAddressAsync();
+                bool fallbackOk = !string.IsNullOrEmpty(reason)
+                    && reason.Contains("已回退")
+                    && broken.FellBackToAllNics;
+
+                broken.MarkFallback("已回退 0.0.0.0（原地址未添加成功）");
+                bool statusOk = broken.StatusMessage != null
+                    && broken.StatusMessage.Contains("已回退");
+
+                Log(dir, $"ip-fallback: 原因=[{Trim(reason)}] 状态=[{Trim(broken.StatusMessage)}] => "
+                    + (fallbackOk && statusOk ? "PASS" : "FAIL"));
+
+                fake.ForcedFailure = null;
+
+                // ⑩ 提权 helper 的参数判定：别的参数不能被误判进来
+                //    （判错的后果是主程序带错参数跑成了 helper，界面根本不出来）
+                bool helperFlag = IpHelperProtocol.IsInvocation(new[] { "--ip-helper", "a.json", "b.json" });
+                bool helperNotFlag = !IpHelperProtocol.IsInvocation(new[] { "--capture-ui", "out" });
+                bool helperGuard = IpHelperProtocol.Run(Array.Empty<string>()) == 2;
+
+                Log(dir, $"ip-helper-arg: 认得={helperFlag} 不误判={helperNotFlag} 缺参守门={helperGuard} => "
+                    + (helperFlag && helperNotFlag && helperGuard ? "PASS" : "FAIL"));
+
+                // ⑪ 窗口：网卡列表、地址表、添加动作三件都要真的连着
+                IpManagerWindow window = new() { WindowStartupLocation = WindowStartupLocation.Manual };
+                window.Show();
+                await Task.Delay(600);
+
+                IpManagerViewModel manager = window.ViewModel;
+                bool nicListOk = manager.Nics.Count > 0 && manager.SelectedNic != null;
+
+                manager.SelectedNic = manager.Nics
+                    .FirstOrDefault(item => string.Equals(item.Id, nic.Id, StringComparison.OrdinalIgnoreCase))
+                    ?? manager.Nics.FirstOrDefault();
+
+                bool gridOk = manager.Addresses.Count == (manager.SelectedNic?.Addresses.Count ?? -1);
+
+                await manager.AddForTestAsync(TestAddress, IpMask.DefaultMask);
+                bool addStatusOk = manager.StatusText != null && manager.StatusText.Contains("已添加");
+
+                Save(window, Path.Combine(dir, "46-IP地址管理.png"));
+                Log(dir, $"ip-window: 网卡={manager.Nics.Count} 列表={nicListOk} "
+                    + $"地址行一致={gridOk} 添加后=[{Trim(manager.StatusText)}] => "
+                    + (nicListOk && gridOk && addStatusOk ? "PASS" : "FAIL"));
+
+                window.Close();
+                await Task.Delay(200);
+            }
+            finally
+            {
+                service.Editor = originalEditor;
+
+                AppSettingsStore.Current.ManagedAddresses.Clear();
+                AppSettingsStore.Current.ManagedAddresses.AddRange(ledgerBackup);
+                AppSettingsStore.Current.DefaultNicId = nicBackup;
+                AppSettingsStore.Save();
+            }
+        }
+
+        /// <summary>日志里只放前 80 个字：断言的判据在 PASS/FAIL 上，全文会把日志冲得没法看</summary>
+        private static string Trim(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return "(空)";
+            }
+
+            string flat = text.Replace('\r', ' ').Replace('\n', ' ');
+            return flat.Length <= 80 ? flat : flat[..80] + "…";
+        }
+
+        /// <summary>
+        /// 假的执行通道：记录请求，按脚本成功或失败。
+        /// 只有自检用，故意不做任何真实的系统操作。
+        /// </summary>
+        private sealed class FakeIpAddressEditor : IIpAddressEditor
+        {
+            public List<IpChangeRequest> Requests { get; } = new();
+
+            /// <summary>非空时所有请求都按失败返回（用来验"回退 0.0.0.0"）</summary>
+            public string ForcedFailure { get; set; }
+
+            public Task<IReadOnlyList<IpChangeResult>> ApplyAsync(IReadOnlyList<IpChangeRequest> requests)
+            {
+                foreach (IpChangeRequest request in requests)
+                {
+                    Requests.Add(request);
+                }
+
+                IReadOnlyList<IpChangeResult> results = requests
+                    .Select(request => ForcedFailure == null
+                        ? new IpChangeResult
+                        {
+                            Address = request.Address,
+                            Ok = true,
+                            Message = request.Action == "delete" ? "已删除" : "已添加"
+                        }
+                        : IpChangeResult.Failed(request.Address, ForcedFailure))
+                    .ToList();
+
+                return Task.FromResult(results);
+            }
         }
     }
 }

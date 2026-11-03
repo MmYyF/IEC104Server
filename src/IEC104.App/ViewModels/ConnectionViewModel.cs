@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Net.Sockets;
 using Avalonia.Media;
 using Avalonia.Threading;
 using IEC104.App.Infrastructure;
@@ -38,6 +39,10 @@ namespace IEC104.App.ViewModels
         private ConnectionProtocol _protocol = ConnectionProtocol.Iec104;
         private int _port = 2404;
         private string _bindAddress = "0.0.0.0";
+        private string _nicId;
+        private bool _autoAddAddress;
+        private bool _isStarting;
+        private bool _fellBackToAllNics;
         private bool _isOpen;
         private string _statusMessage = "未启动";
 
@@ -147,12 +152,177 @@ namespace IEC104.App.ViewModels
                 {
                     OnPropertyChanged(nameof(DisplayText));
                     OnPropertyChanged(nameof(EndPointText));
+                    OnPropertyChanged(nameof(AddressPlanText));
+                    OnPropertyChanged(nameof(AddressPlanNeedsAttention));
+                    AddressPlanChanged?.Invoke();
                 }
             }
         }
 
         /// <summary>监听端点的显示文本，如 "0.0.0.0:2404"</summary>
         public string EndPointText => $"{(string.IsNullOrWhiteSpace(_bindAddress) ? "0.0.0.0" : _bindAddress)}:{_port}";
+
+        // ── 网卡与自动添加地址（1.11）────────────────────────────
+        //
+        // 【为什么挂在通道上而不是全局】绑定地址本来就是通道的属性（BindAddress）。
+        // 一个主站可能接三个网段，每个网段一条通道、一块网卡；做成全局开关就变成
+        // "所有通道都用同一块网卡"，多网卡隔离的场景立刻失效。
+        // 批量建站时仍然默认统一一块（见 BatchCreateSlaveViewModel），但落到每条通道上
+        // 是可以单独改的 —— 默认值省事，个体差异留口子。
+
+        /// <summary>通信网卡 GUID。空 = 没选过（此时启动不做自动添加）</summary>
+        public string NicId
+        {
+            get => _nicId;
+            set
+            {
+                if (SetField(ref _nicId, string.IsNullOrWhiteSpace(value) ? null : value.Trim()))
+                {
+                    OnPropertyChanged(nameof(NicDisplayText));
+                    OnPropertyChanged(nameof(AddressPlanText));
+                    OnPropertyChanged(nameof(AddressPlanNeedsAttention));
+                    AddressPlanChanged?.Invoke();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 启动这条通道时，若本机没有 <see cref="BindAddress"/>，就先把它加到 <see cref="NicId"/> 那块网卡上。
+        ///
+        /// 默认**关**：这是个会改动操作系统的动作，不该在用户没要求的时候发生。
+        /// </summary>
+        public bool AutoAddAddress
+        {
+            get => _autoAddAddress;
+            set
+            {
+                if (SetField(ref _autoAddAddress, value))
+                {
+                    OnPropertyChanged(nameof(AddressPlanText));
+                    OnPropertyChanged(nameof(AddressPlanNeedsAttention));
+                    AddressPlanChanged?.Invoke();
+                }
+            }
+        }
+
+        /// <summary>网卡名（给界面看）。GUID 失效时说清楚，不要显示一个 GUID</summary>
+        public string NicDisplayText
+        {
+            get
+            {
+                if (string.IsNullOrWhiteSpace(_nicId))
+                {
+                    return "未选择网卡";
+                }
+
+                NicInfo nic = IpAddressService.Shared.FindNic(_nicId);
+                return nic == null ? "网卡已不存在" : nic.Name;
+            }
+        }
+
+        /// <summary>
+        /// 这条通道的地址计划，一行给用户看。
+        /// 措辞统一由 <see cref="IpAddressService.DescribePlan"/> 提供——三个地方说同一句话。
+        /// </summary>
+        public string AddressPlanText =>
+            IpAddressService.DescribePlan(_bindAddress, _nicId, _autoAddAddress).Text;
+
+        /// <summary>地址计划是否需要用户注意（本机没有又没开自动添加这类）</summary>
+        public bool AddressPlanNeedsAttention =>
+            IpAddressService.DescribePlan(_bindAddress, _nicId, _autoAddAddress).Warning;
+
+        /// <summary>地址相关设置变了（界面上的提示要跟着刷新）</summary>
+        public event Action AddressPlanChanged;
+
+        /// <summary>
+        /// 启动前确保地址存在。
+        ///
+        /// 返回 null = 可以按原地址启动；返回非空 = **已回退到 0.0.0.0**，字符串是原因。
+        /// 回退绝不静默：调用方要把这句话同时写进通道状态、状态栏和日志。
+        /// </summary>
+        public async System.Threading.Tasks.Task<string> PrepareAddressAsync()
+        {
+            string address = _bindAddress;
+            if (string.IsNullOrWhiteSpace(address) || address == "0.0.0.0")
+            {
+                return null;
+            }
+
+            if (IpAddressService.Shared.IsLocalAddress(address))
+            {
+                return null;   // 本机已有，直接起
+            }
+
+            if (!_autoAddAddress)
+            {
+                // 没开自动添加就照旧失败，但把话说清楚 —— 原来的
+                // "启动连接失败：..." 完全看不出是"本机没这个地址"
+                throw new InvalidOperationException(
+                    $"本机没有地址 {address}（这条通道指定的绑定地址）。"
+                    + "可以在通道设置里开启“启动时自动添加地址”，或改用 0.0.0.0 监听全部网卡。");
+            }
+
+            IpChangeResult result = await IpAddressService.Shared
+                .EnsureAsync(address, _nicId, IpMask.DefaultMask, $"启动从站 · {_name}")
+                .ConfigureAwait(true);
+
+            if (result.Ok)
+            {
+                if (!result.AlreadyExists)
+                {
+                    // 用一个现查的名字：这条通道可能没单独选网卡，用的是设置里的默认网卡
+                    NicInfo used = IpAddressService.Shared.FindNic(_nicId)
+                        ?? IpAddressService.Shared.FindNic(AppSettingsStore.Current.DefaultNicId);
+                    LinkEvent?.Invoke($"[{_name}] 已把地址 {address} 添加到网卡 {used?.Name ?? "?"}");
+                }
+                return null;
+            }
+
+            // 加不上：按用户的选择回退到 0.0.0.0 先起来，把原因交回去让三处都写明
+            string reason = $"{address} 未能添加到本机（{result.Message}），已回退为监听 0.0.0.0。";
+            _fellBackToAllNics = true;
+            LinkEvent?.Invoke($"[{_name}] {reason}");
+            return reason;
+        }
+
+        /// <summary>上一次启动是不是回退到了 0.0.0.0（状态栏据此显示警告色）</summary>
+        public bool FellBackToAllNics => _fellBackToAllNics;
+
+        /// <summary>
+        /// 启动成功后把"已回退"写进通道自己的状态文字。
+        ///
+        /// 必须在 Open() 之后调：Open() 会把 StatusMessage 覆盖成"监听 x:y"，
+        /// 而回退恰恰是"显示的监听地址和配置里的地址不一样"，这条信息不能被覆盖掉。
+        /// </summary>
+        public void MarkFallback(string shortText)
+        {
+            _fellBackToAllNics = true;
+            StatusMessage = shortText;
+            OnPropertyChanged(nameof(FellBackToAllNics));
+        }
+
+        /// <summary>启动进行中（防止地址还没加完用户又点一次，起两条服务）</summary>
+        public bool IsStarting => _isStarting;
+
+        /// <summary>启动前的一小段异步准备（加地址）；界面据此禁用按钮</summary>
+        public bool BeginStart()
+        {
+            if (_isStarting)
+            {
+                return false;
+            }
+
+            _isStarting = true;
+            OnPropertyChanged(nameof(IsStarting));
+            return true;
+        }
+
+        /// <summary>准备结束，恢复按钮</summary>
+        public void EndStart()
+        {
+            _isStarting = false;
+            OnPropertyChanged(nameof(IsStarting));
+        }
 
         /// <summary>101 串口名（如 COM3）</summary>
         public string SerialPortName { get; set; } = "COM1";
@@ -370,6 +540,8 @@ namespace IEC104.App.ViewModels
                 return;
             }
 
+            _fellBackToAllNics = false;
+
             if (_protocol == ConnectionProtocol.Iec101)
             {
                 // 101 串口收发尚未复刻，这里明确告知而不是假装成功
@@ -438,10 +610,49 @@ namespace IEC104.App.ViewModels
                 HookSlave(slave);
             }
 
-            _server.Start(_port, _bindAddress);
+            try
+            {
+                _server.Start(_port, _bindAddress);
+            }
+            catch (SocketException exception)
+            {
+                // 起不来就把半成品收干净：_server 已经挂过事件了，留着等于一个
+                // "看起来存在但没在监听"的对象，后面的 Close() 还会以为要停它。
+                // 从站也要解钩，否则它们继续往这条死通道发 ASDU。
+                _server.Dispose();
+                _server = null;
+                foreach (SlaveViewModel slave in Slaves)
+                {
+                    UnhookSlave(slave);
+                }
+                throw new InvalidOperationException(DescribeSocketError(exception), exception);
+            }
+
             IsOpen = true;
             StatusMessage = $"监听 {EndPointText}";
             LinkEvent?.Invoke($"[{_name}] 已启动，监听 {EndPointText}");
+        }
+
+        /// <summary>把套接字错误翻译成用户能动手解决的一句话</summary>
+        private string DescribeSocketError(SocketException exception)
+        {
+            switch (exception.SocketErrorCode)
+            {
+                case SocketError.AddressNotAvailable:
+                    // 10049：本机没有这个地址。原来这里只会显示"启动连接失败"，用户看不出原因
+                    return $"本机没有地址 {_bindAddress}，所以无法在它上面监听（系统错误 10049）。"
+                        + "可以：① 通道设置里勾选“启动时自动添加地址”并选一块网卡；"
+                        + "② 用「工具 → IP 地址管理」手工把它加进去；"
+                        + "③ 改成 0.0.0.0 监听全部网卡。";
+                case SocketError.AddressAlreadyInUse:
+                    return $"端口 {_port} 已被占用（系统错误 10048）。"
+                        + "可能是本程序已经起过一个实例，或者别的软件在监听这个端口，换一个端口再试。";
+                case SocketError.AccessDenied:
+                    return $"系统拒绝绑定端口 {_port}（1024 以下的端口通常需要管理员权限）。";
+                default:
+                    return $"监听 {EndPointText} 失败：{exception.Message}"
+                        + $"（系统错误 {(int)exception.SocketErrorCode}）";
+            }
         }
 
         /// <summary>停止连接并释放资源</summary>

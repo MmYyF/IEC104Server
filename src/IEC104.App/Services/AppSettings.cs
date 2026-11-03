@@ -139,8 +139,57 @@ namespace IEC104.App.Services
         /// <summary>两次写盘之间的最小间隔（秒），防连续微调时反复写</summary>
         public int MinSaveIntervalSeconds { get; set; } = 3;
 
+        // ── 网卡与地址（1.11）──────────────────────────────────
+        //
+        // 这两项都是"跟着这台机器走"的：同一个工程换台机器，网卡 GUID 大概率不存在，
+        // 而账本里记的地址在新机器上一个都对不上。所以它们不进工程文件，只进这里。
+
+        /// <summary>
+        /// 默认通信网卡（GUID）。
+        ///
+        /// 存 GUID 不存名字：网卡在"网络连接"里可以改名，中英文系统的默认名也不一样
+        /// （"以太网" / "Ethernet"），存名字换来的是"换台机器或者改过名就全部失效"。
+        /// 空表示还没选过，此时新建从站会自动带出第一块已连接的物理网卡。
+        /// </summary>
+        public string DefaultNicId { get; set; }
+
+        /// <summary>
+        /// 本工具加过的地址（账本）。
+        ///
+        /// 【为什么必须有账本】`netsh interface ipv4 add address` 是**持久化**的——
+        /// 加完即写进注册表，程序退出、机器重启都还在。如果不管记账，
+        /// 用户试了十几次不同网段，网卡上就永久挂着十几个地址，
+        /// 而且界面上根本看不出哪几个是本工具加的、"能不能删"。
+        /// 有账本才敢做"一键清理"，也才敢给地址行标上"本工具"。
+        ///
+        /// 只记"本工具加的"：系统原有的、DHCP 拿到的一律不进账本，也就永远删不到。
+        /// </summary>
+        public List<ManagedAddress> ManagedAddresses { get; set; } = new();
+
         /// <summary>最近工程列表的条数上限</summary>
         public const int MaxRecentProjects = 5;
+    }
+
+    /// <summary>账本里的一条：本工具在哪个网卡上加过哪个地址</summary>
+    public sealed class ManagedAddress
+    {
+        /// <summary>网卡 GUID（netsh 只认名字，用的时候现查）</summary>
+        public string NicId { get; set; }
+
+        /// <summary>加的时候网卡叫什么（GUID 失效时给用户看，便于判断该删哪条）</summary>
+        public string NicName { get; set; }
+
+        public string Address { get; set; }
+
+        public string Mask { get; set; }
+
+        public DateTime AddedAt { get; set; }
+
+        /// <summary>谁触发的："手动添加" / "启动从站 · 通道A" / "批量建站"</summary>
+        public string Source { get; set; }
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        public string DisplayText => $"{Address} · {NicName}";
     }
 
     /// <summary>最近工程列表里的一条（磁盘格式）</summary>
@@ -419,6 +468,15 @@ namespace IEC104.App.Services
             settings.AutoSaveDelaySeconds = Math.Clamp(settings.AutoSaveDelaySeconds, 3, 60);
             settings.ValueSaveDelaySeconds = Math.Clamp(settings.ValueSaveDelaySeconds, 3, 60);
             settings.MinSaveIntervalSeconds = Math.Clamp(settings.MinSaveIntervalSeconds, 1, 60);
+
+            // 账本：旧版本没有这段（反序列化出来是 null），去掉手改留下的空条目
+            settings.ManagedAddresses ??= new List<ManagedAddress>();
+            settings.ManagedAddresses.RemoveAll(item =>
+                item == null || string.IsNullOrWhiteSpace(item.Address));
+            if (string.IsNullOrWhiteSpace(settings.DefaultNicId))
+            {
+                settings.DefaultNicId = null;
+            }
 
             // 最近工程：去掉空条目和重复路径，再裁到上限
             settings.RecentProjects ??= new List<RecentProjectDto>();

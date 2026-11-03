@@ -321,6 +321,8 @@ namespace IEC104.App.Views
 
             viewModel.ShowStringCodecDialog = () => _ = new StringCodecWindow().ShowDialog(this);
 
+            viewModel.ShowIpManagerDialog = () => _ = new IpManagerWindow().ShowDialog(this);
+
             viewModel.ShowMessage = (title, content) => _ = ShowMessageAsync(title, content);
 
             // 工程相关（1.10）：确认框与"关闭工程"的完整流程都在视图层，
@@ -2019,6 +2021,9 @@ namespace IEC104.App.Views
 
         private void OnStringCodecClick(object sender, RoutedEventArgs e) =>
             ViewModel?.ShowStringCodecDialog?.Invoke();
+
+        private void OnIpManagerClick(object sender, RoutedEventArgs e) =>
+            ViewModel?.ShowIpManagerDialog?.Invoke();
 
         private void OnAutoChangeClick(object sender, RoutedEventArgs e) =>
             ViewModel?.ShowAutoChangeCommand?.Execute(null);

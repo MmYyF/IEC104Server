@@ -598,6 +598,11 @@ namespace IEC104.App.ViewModels
                 _ownerBindAddress = string.IsNullOrWhiteSpace(owner.BindAddress) ? "0.0.0.0" : owner.BindAddress;
                 _ownerPort = owner.Port;
 
+                // 端点和网卡是同一件事的两半：改 IP 的时候顺手能改"加在哪块网卡上"
+                AddressPlan.BindAddress = _ownerBindAddress;
+                AddressPlan.NicId = owner.NicId;
+                AddressPlan.AutoAddAddress = owner.AutoAddAddress;
+
                 // 双击标签就能顺手改这条通道的链路参数与报文长度——
                 // 用户心里的"这台装置"本来就包含它挂在哪个口、用哪套宽度，
                 // 让他先去树里找到通道、右键编辑、再回来，等于逼他记住一次协议分层。
@@ -632,6 +637,22 @@ namespace IEC104.App.ViewModels
         /// 那就不能出现"这里少一个 k、那里少一个 t3"的差异。
         /// </summary>
         public LinkParametersModel NewChannelLink { get; } = new();
+
+        /// <summary>
+        /// 监听地址计划：通信网卡 + 启动时自动添加（1.11）。
+        ///
+        /// 新建模式挂"新通道"，编辑模式挂"所属通道"——同一个时刻只可能在配一条通道，
+        /// 所以一份就够，不用按模式存两套。
+        /// </summary>
+        public NicPickerModel AddressPlan { get; } = new();
+
+        /// <summary>
+        /// 什么时候显示网卡那一段。
+        ///
+        /// 新建模式必须同时是"新建通道 + 104"：选"用已有通道"时，这一批参数根本不会落地
+        /// （只是把从站挂到别人身上），把网卡摆出来让人勾，等于给一个存不住的选项。
+        /// </summary>
+        public bool ShowAddressPlan => IsCreateMode ? IsNewChannelMode && NewChannelIsTcp : CanEditChannel;
 
         /// <summary>编辑模式下所属通道的链路参数 + 报文长度（草稿）。只有 CanEditChannel 时才非 null</summary>
         public LinkParametersModel OwnerChannelLink { get; }
@@ -695,7 +716,13 @@ namespace IEC104.App.ViewModels
         public string OwnerBindAddress
         {
             get => _ownerBindAddress;
-            set => SetField(ref _ownerBindAddress, value);
+            set
+            {
+                if (SetField(ref _ownerBindAddress, value))
+                {
+                    AddressPlan.BindAddress = value;
+                }
+            }
         }
 
         /// <summary>所属通道的监听端口</summary>
@@ -744,6 +771,7 @@ namespace IEC104.App.ViewModels
                 {
                     OnPropertyChanged(nameof(IsExistingChannelMode));
                     OnPropertyChanged(nameof(IsNewChannelMode));
+                    OnPropertyChanged(nameof(ShowAddressPlan));
                 }
             }
         }
@@ -784,7 +812,13 @@ namespace IEC104.App.ViewModels
         public string NewBindAddress
         {
             get => _newBindAddress;
-            set => SetField(ref _newBindAddress, value);
+            set
+            {
+                if (SetField(ref _newBindAddress, value))
+                {
+                    AddressPlan.BindAddress = value;
+                }
+            }
         }
 
         /// <summary>新通道的监听端口</summary>
@@ -816,6 +850,7 @@ namespace IEC104.App.ViewModels
                     OnPropertyChanged(nameof(NewChannelIsTcp));
                     OnPropertyChanged(nameof(NewChannelIsSerial));
                     OnPropertyChanged(nameof(ShowNewChannelTcp));
+                    OnPropertyChanged(nameof(ShowAddressPlan));
                     SyncAutoChannelName(value);
                 }
             }
@@ -892,6 +927,12 @@ namespace IEC104.App.ViewModels
 
                     // 新通道还没有从站/点表，"装不装得下"这一层交给用户建完点位后再校验；
                     // 这里只挡挡位本身（k/w/t 约束、三个长度的取值范围）
+                    string planError = ValidateAddressPlan();
+                    if (planError != null)
+                    {
+                        return planError;
+                    }
+
                     return NewChannelLink.Validate();
                 }
                 else
@@ -922,8 +963,35 @@ namespace IEC104.App.ViewModels
                     return error;
                 }
 
+                string planError = ValidateAddressPlan();
+                if (planError != null)
+                {
+                    return planError;
+                }
+
                 // 双击标签也能改链路参数与报文长度：这里要连带核"这条通道下现有从站装不装得下"
                 return OwnerChannelLink?.Validate(OwnerChannel);
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// 网卡那一段的校验：勾了"启动时自动添加"却没选网卡，等于开机后必然失败，
+        /// 这种"点了确定才发现"的事要在点确定之前挡住。
+        /// </summary>
+        private string ValidateAddressPlan()
+        {
+            if (!AddressPlan.CanAutoAdd)
+            {
+                return null;   // 监听 0.0.0.0，不涉及网卡
+            }
+
+            if (AddressPlan.AutoAddAddress && string.IsNullOrWhiteSpace(AddressPlan.NicId))
+            {
+                return AddressPlan.HasNic
+                    ? "勾选了“启动时自动添加地址”，但没有选择通信网卡。"
+                    : "本机没有找到可用网卡，无法自动添加地址（可以先用 0.0.0.0 监听全部网卡）。";
             }
 
             return null;
@@ -1045,6 +1113,14 @@ namespace IEC104.App.ViewModels
                     ? "0.0.0.0"
                     : _ownerBindAddress.Trim();
                 OwnerChannel.Port = _ownerPort;
+
+                // 端点改了，网卡那两半也跟着走，否则会出现"IP 换成 B 网段的，网卡还是 A 那块"
+                if (AddressPlan.CanAutoAdd)
+                {
+                    OwnerChannel.NicId = AddressPlan.NicId;
+                    OwnerChannel.AutoAddAddress = AddressPlan.AutoAddAddress;
+                }
+
                 OwnerChannelLink?.ApplyTo(OwnerChannel);
             }
 
@@ -1075,7 +1151,10 @@ namespace IEC104.App.ViewModels
                 Port = _newPort,
                 BindAddress = string.IsNullOrWhiteSpace(_newBindAddress) ? "0.0.0.0" : _newBindAddress.Trim(),
                 SerialPortName = string.IsNullOrWhiteSpace(_newSerialPortName) ? "COM1" : _newSerialPortName.Trim(),
-                BaudRate = _newBaudRate
+                BaudRate = _newBaudRate,
+                // 101 走串口，没有"网卡上的 IP"这回事，带过去就是脏数据
+                NicId = useSerial || !AddressPlan.CanAutoAdd ? null : AddressPlan.NicId,
+                AutoAddAddress = !useSerial && AddressPlan.CanAutoAdd && AddressPlan.AutoAddAddress
             };
 
             NewChannelLink.ApplyTo(channel);

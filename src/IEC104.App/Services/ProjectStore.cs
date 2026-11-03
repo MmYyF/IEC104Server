@@ -169,6 +169,12 @@ namespace IEC104.App.Services
             writer.WriteNumber(nameof(ConnectionDto.CauseOfTransmissionLength), connection.CauseOfTransmissionLength);
             writer.WriteNumber(nameof(ConnectionDto.CommonAddressLength), connection.CommonAddressLength);
             writer.WriteNumber(nameof(ConnectionDto.InformationObjectAddressLength), connection.InformationObjectAddressLength);
+            WriteStringIfNotNull(writer, nameof(ConnectionDto.NicId), connection.NicId);
+            if (connection.AutoAddAddress)
+            {
+                // 默认关的开关：只在开的时候写，老版本读新文件也不会多出一堆 false
+                writer.WriteBoolean(nameof(ConnectionDto.AutoAddAddress), true);
+            }
 
             writer.WriteStartArray(nameof(ConnectionDto.Slaves));
             foreach (SlaveViewModel slave in connection.Slaves)
@@ -274,7 +280,9 @@ namespace IEC104.App.Services
                     CommonAddressLength = IsValidLength(connectionDto.CommonAddressLength, 1, 2)
                         ? connectionDto.CommonAddressLength : 2,
                     InformationObjectAddressLength = IsValidLength(connectionDto.InformationObjectAddressLength, 1, 3)
-                        ? connectionDto.InformationObjectAddressLength : 3
+                        ? connectionDto.InformationObjectAddressLength : 3,
+                    NicId = connectionDto.NicId,
+                    AutoAddAddress = connectionDto.AutoAddAddress
                 };
 
                 foreach (SlaveDto slaveDto in connectionDto.Slaves ?? new List<SlaveDto>())
@@ -398,6 +406,17 @@ namespace IEC104.App.Services
 
             /// <summary>信息体地址长度（字节），同上回落到 3</summary>
             public int InformationObjectAddressLength { get; set; }
+
+            /// <summary>
+            /// 通信网卡 GUID（1.11 新增）。老文件没有此字段 → null → 启动不做自动添加。
+            ///
+            /// 存 GUID 不存名字：网卡名可以改，中英文系统的默认名也不同。
+            /// 换台机器打开时 GUID 大概率对不上，界面会显示"网卡已不存在"并让用户重选。
+            /// </summary>
+            public string NicId { get; set; }
+
+            /// <summary>启动时自动把 BindAddress 加到 NicId 那块网卡（1.11 新增，默认关）</summary>
+            public bool AutoAddAddress { get; set; }
 
             public List<SlaveDto> Slaves { get; set; }
         }

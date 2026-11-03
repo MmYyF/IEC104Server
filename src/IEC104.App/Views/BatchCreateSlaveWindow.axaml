@@ -67,6 +67,19 @@
           <TextBlock Grid.Column="2" Text="从站名模板" VerticalAlignment="Center" Margin="0,0,8,0" />
           <TextBox Grid.Column="3" Text="{Binding SlaveNamePattern, Mode=TwoWay}" />
         </Grid>
+
+        <Border Height="1" Background="{DynamicResource BorderLineBrush}" Margin="0,2" />
+
+        <!-- 这一批共用的网卡与"启动时自动添加"。
+             用户原话："批量创建时所有的默认一个网卡，但是可以自行去某一个通道下面修改通信网卡。"
+             所以这里给默认值，个体差异留到建完后逐条改。 -->
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="通信网卡" FontWeight="SemiBold"
+                     Foreground="{DynamicResource PrimaryBrush}" VerticalAlignment="Center" />
+          <views:HintIcon Tip="这一批通道统一用这块网卡。要单独调某一台，建完后双击那台从站的标签，在它自己的窗口里改。" />
+        </StackPanel>
+
+        <views:NicPickerPanel x:Name="BatchNicPanel" DataContext="{Binding AddressPlan}" />
       </StackPanel>
     </Border>
 
@@ -103,6 +116,7 @@
             <DataGridTextColumn Header="#" Binding="{Binding Index}" Width="40" />
             <DataGridTextColumn Header="通道名" Binding="{Binding ChannelName}" Width="130" />
             <DataGridTextColumn Header="监听地址" Binding="{Binding EndPoint}" Width="160" />
+            <DataGridTextColumn Header="本机地址" Binding="{Binding AddressStatus}" Width="150" />
             <DataGridTextColumn Header="公共地址" Binding="{Binding CommonAddress}" Width="90" />
             <DataGridTextColumn Header="从站名" Binding="{Binding SlaveName}" Width="130" />
             <DataGridTextColumn Header="状态" Binding="{Binding StatusText}" Width="*" />

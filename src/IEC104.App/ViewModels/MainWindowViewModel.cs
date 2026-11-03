@@ -1247,6 +1247,9 @@ namespace IEC104.App.ViewModels
         /// <summary>显示字符串编解码窗口</summary>
         public Action ShowStringCodecDialog { get; set; }
 
+        /// <summary>显示 IP 地址管理窗口（1.11）</summary>
+        public Action ShowIpManagerDialog { get; set; }
+
         /// <summary>显示提示消息（标题, 内容）</summary>
         public Action<string, string> ShowMessage { get; set; }
 
@@ -2123,27 +2126,59 @@ namespace IEC104.App.ViewModels
                 return;
             }
 
+            if (connection.IsOpen)
+            {
+                connection.Close();
+                StatusText = $"{connection.Name} 已停止";
+                RefreshCommandStates();
+                return;
+            }
+
+            // 启动前可能要先往网卡上添加绑定地址（要提权，是异步的），
+            // 所以启动这一段走 async。异常全在 StartConnectionAsync 里接住，
+            // 不会逃到 UI 线程上去（逃上去会直接把进程带走）。
+            _ = StartConnectionAsync(connection);
+        }
+
+        private async System.Threading.Tasks.Task StartConnectionAsync(ConnectionViewModel connection)
+        {
+            // 地址添加可能弹 UAC、要等用户点，这段时间里用户很容易再点一次启动。
+            // 不加这道门就会起来两个 Iec104Server 抢同一个端口。
+            if (!connection.BeginStart())
+            {
+                return;
+            }
+
             try
             {
-                if (connection.IsOpen)
+                string fallbackReason = await connection.PrepareAddressAsync().ConfigureAwait(true);
+                connection.Open();
+
+                if (string.IsNullOrEmpty(fallbackReason))
                 {
-                    connection.Close();
-                    StatusText = $"{connection.Name} 已停止";
+                    StatusText = $"{connection.Name} 已启动，{connection.StatusMessage}";
                 }
                 else
                 {
-                    connection.Open();
-                    StatusText = $"{connection.Name} 已启动，{connection.StatusMessage}";
+                    // 回退绝不静默：通道状态、状态栏、日志三处都写明。
+                    // 主站连到错误的地址上却看着一切正常，比直接报错难查一百倍。
+                    // （日志那一路由 PrepareAddressAsync 里的 LinkEvent 带出去，
+                    //   它已经挂在 AppendLog 上了。）
+                    connection.MarkFallback("已回退 0.0.0.0（原地址未添加成功）");
+                    StatusText = $"{connection.Name} 已启动，但 {fallbackReason}";
                 }
             }
             catch (Exception exception)
             {
-                // 端口占用、参数非法等都要让用户看到原因，不能静默失败
+                // 端口占用、参数非法、本机无此地址等都要让用户看到原因，不能静默失败
                 ShowMessage?.Invoke("启动连接失败", exception.Message);
                 StatusText = "启动失败：" + exception.Message;
             }
-
-            RefreshCommandStates();
+            finally
+            {
+                connection.EndStart();
+                RefreshCommandStates();
+            }
         }
 
         private void OpenAll()

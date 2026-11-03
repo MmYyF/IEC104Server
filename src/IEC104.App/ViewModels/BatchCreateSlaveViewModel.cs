@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows.Input;
 using IEC104.App.Infrastructure;
+using IEC104.App.Services;
 
 namespace IEC104.App.ViewModels
 {
@@ -18,6 +19,9 @@ namespace IEC104.App.ViewModels
         public string SlaveName { get; init; }
 
         public string EndPoint => $"{Ip}:{Port}";
+
+        /// <summary>这个地址在本机的状态（已有 / 启动时添加 / 本机没有）——一行看完整批</summary>
+        public string AddressStatus { get; init; }
 
         /// <summary>冲突/越界提示，为空表示这一行可以建</summary>
         public string Warning { get; init; }
@@ -63,6 +67,9 @@ namespace IEC104.App.ViewModels
             // 预览里的告警必须跟着变，否则用户改窄了宽度却看到一片"待创建"
             Link.PropertyChanged += (_, _) => RegeneratePreview();
 
+            // 换网卡或开关自动添加，都要重算"本机地址"那一列
+            AddressPlan.Changed += () => RegeneratePreview();
+
             RegeneratePreview();
         }
 
@@ -73,6 +80,17 @@ namespace IEC104.App.ViewModels
         /// 要单独调某一台，建完后在从站上双击改（预览里那句提示也是这么说的）。
         /// </summary>
         public LinkParametersModel Link { get; } = new();
+
+        /// <summary>
+        /// 这一批共用的通信网卡 + "启动时自动添加"（1.11）。
+        ///
+        /// 按用户的说法："批量创建时所有的默认一个网卡，但是可以自行去某一个通道下面修改通信网卡。"
+        /// 所以这里只给一个默认值，落到每条通道上是各自可改的（建完后双击从站标签就能改）。
+        ///
+        /// ShowPlanText 关掉：这里一整批有几十个地址，说一句"本机没有 192.168.1.10"
+        /// 会让人以为只有一个地址。逐行状态交给预览表格的「本机地址」列。
+        /// </summary>
+        public NicPickerModel AddressPlan { get; } = new() { ShowPlanText = false };
 
         // ── 参数 ────────────────────────────────────────────────
 
@@ -192,6 +210,18 @@ namespace IEC104.App.ViewModels
                 return;
             }
 
+            // 勾了"启动时自动添加"却没选网卡：这一批每一条都会在启动时失败，
+            // 与其建完再逐条踩，不如现在就挡住
+            if (AddressPlan.AutoAddAddress && string.IsNullOrWhiteSpace(AddressPlan.NicId))
+            {
+                ErrorText = "勾选了“启动时自动添加地址”，但没有选择通信网卡。";
+                OnPropertyChanged(nameof(SummaryText));
+                return;
+            }
+
+            // 让网卡那一段的"是否需要自动添加"判断按真实地址来（起始 IP 一定是具体的）
+            AddressPlan.BindAddress = IpToString(baseIp);
+
             long portSpan = (long)_portStep * (_count - 1);
             if (_startPort + portSpan > 65535)
             {
@@ -252,6 +282,7 @@ namespace IEC104.App.ViewModels
                     CommonAddress = ca,
                     ChannelName = Format(_channelNamePattern, index, ip, port, ca, "通道"),
                     SlaveName = Format(_slaveNamePattern, index, ip, port, ca, "从站"),
+                    AddressStatus = IpAddressService.ShortStatus(ip, AddressPlan.NicId, AddressPlan.AutoAddAddress),
                     Warning = warning
                 });
             }
@@ -317,7 +348,10 @@ namespace IEC104.App.ViewModels
                     Name = item.ChannelName,
                     Protocol = ConnectionProtocol.Iec104,
                     BindAddress = item.Ip,
-                    Port = item.Port
+                    Port = item.Port,
+                    // 这一批统一用界面上选的那块网卡；要单独调某一台，建完后双击从站标签改
+                    NicId = AddressPlan.NicId,
+                    AutoAddAddress = AddressPlan.AutoAddAddress
                 };
 
                 // 这一批统一套用界面上那套链路参数与报文长度

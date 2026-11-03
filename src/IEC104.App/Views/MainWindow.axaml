@@ -194,6 +194,12 @@
             <MenuItem Header="字符串编解码" Click="OnStringCodecClick">
               <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconCodec}" /></MenuItem.Icon>
             </MenuItem>
+            <Separator />
+            <!-- 1.11：IP 地址管理放在「工具」最末一段，和上面那两条"算一算"的工具分开——
+                 它动的是本机的操作系统，不是数据。 -->
+            <MenuItem Header="IP 地址管理…" Click="OnIpManagerClick">
+              <MenuItem.Icon><ctl:MenuGlyph Classes="menuIcon" Data="{StaticResource IconNic}" /></MenuItem.Icon>
+            </MenuItem>
           </MenuItem>
 
           <!-- ══ 「视图」整条已删除（1.9.9）══

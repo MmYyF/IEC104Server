@@ -1,0 +1,46 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:IEC104.App.Views"
+             x:Class="IEC104.App.Views.NicPickerPanel">
+
+  <!--
+    「监听地址 → 通信网卡 → 启动时自动添加」这一组 —— 可复用面板。
+
+    同一组参数要出现在三个地方（新建从站、双击从站改端点、批量建站），
+    三处各抄一份 XAML 的下场是"这里少一个勾、那里提示措辞不一样"，
+    而它们描述的是同一件事。所以：模型一份（NicPickerModel）、面板一份、绑 NicPickerModel。
+
+    这里只负责"说明计划"，不做任何实际修改系统的事：
+    地址是在**启动通道**那一刻才加的，对话框点"确定"之前本机一点变化都没有。
+  -->
+  <StackPanel Spacing="6">
+
+    <Grid ColumnDefinitions="90,*" RowDefinitions="Auto">
+      <TextBlock Grid.Column="0" Text="通信网卡" VerticalAlignment="Center" />
+      <ComboBox Grid.Column="1" x:Name="NicBox"
+                ItemsSource="{Binding Nics}"
+                SelectedItem="{Binding SelectedNic, Mode=TwoWay}"
+                IsEnabled="{Binding HasNic}"
+                HorizontalAlignment="Stretch" Margin="0,3">
+        <ComboBox.ItemTemplate>
+          <DataTemplate>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="{Binding Name}" />
+              <TextBlock Text="{Binding SummaryText}" Classes="hint" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding StatusText}" Classes="hint" VerticalAlignment="Center" />
+            </StackPanel>
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+    </Grid>
+
+    <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding CanAutoAdd}">
+      <CheckBox Content="启动通道时自动把这个 IP 添加到所选网卡"
+                IsChecked="{Binding AutoAddAddress, Mode=TwoWay}" />
+      <views:HintIcon Tip="添加是持久化的（写进系统，重启后仍在），需要管理员权限，会弹一次授权窗口。地址若已在任何一块网卡上，会跳过不重复添加。本工具加过的地址可以在“工具 → IP 地址管理”里一键清理。" />
+    </StackPanel>
+
+    <TextBlock Text="{Binding PlanText}" Classes="hint" TextWrapping="Wrap"
+               IsVisible="{Binding ShowPlanText}" />
+  </StackPanel>
+</UserControl>
