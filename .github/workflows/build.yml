@@ -1,0 +1,33 @@
+# 每次推 main / 提 PR 先编译一遍：能挡住"只有我这台机器能编"的问题。
+#
+# 这里只做编译，不跑 --capture-ui：那套自检会真的开窗口、真占端口、
+# 真弹提权（虽然 IP 那段换成了假执行通道，窗口还是要真显示），
+# GitHub 的 runner 没有交互桌面，跑不起来。界面自检留给本地。
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags-ignore: ['v*']      # 发版由 release.yml 负责，别重复跑
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore IEC104.sln
+
+      # TreatWarningsAsErrors 不开：项目里 0 警告是常态，但 CI 不该因为
+      # 一个新版本 SDK 的分析器升级就红一片，只作为提示留在这里
+      - name: Build (Release)
+        run: dotnet build IEC104.sln -c Release --no-restore

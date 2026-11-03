@@ -18,7 +18,14 @@ rem ============================================================
 setlocal
 
 set "REA_ROOT=D:\01_File\03_rea"
-set "DOTNET=%REA_ROOT%\tools\dotnet\dotnet.exe"
+rem Override the portable toolchain root if it lives elsewhere:
+rem   set REA_ROOT=D:\your\tools
+rem If there is no portable SDK, fall back to whatever dotnet is on PATH.
+if exist "%REA_ROOT%\tools\dotnet\dotnet.exe" (
+    set "DOTNET=%REA_ROOT%\tools\dotnet\dotnet.exe"
+) else (
+    set "DOTNET=dotnet"
+)
 set "CODE_DIR=%~dp0"
 set "OUT_CONSOLE=%REA_ROOT%\tools\IEC104Simulator"
 rem GUI output folder and exe name are IEC104-Server:
@@ -28,10 +35,17 @@ set "OUT_GUI=%REA_ROOT%\tools\IEC104-Server"
 set DOTNET_CLI_TELEMETRY_OPTOUT=1
 set DOTNET_NOLOGO=1
 
-if not exist "%DOTNET%" (
-    echo ERROR: dotnet not found at %DOTNET%
-    echo Install .NET 8 SDK into %REA_ROOT%\tools\dotnet first.
-    exit /b 1
+if /I "%DOTNET%"=="dotnet" (
+    where dotnet >nul 2>nul || (
+        echo ERROR: dotnet not found in PATH, and no portable SDK at %REA_ROOT%\tools\dotnet
+        exit /b 1
+    )
+) else (
+    if not exist "%DOTNET%" (
+        echo ERROR: dotnet not found at %DOTNET%
+        echo Install .NET 8 SDK into %REA_ROOT%\tools\dotnet first.
+        exit /b 1
+    )
 )
 
 if /I "%~1"=="publish" goto :publish
@@ -90,7 +104,9 @@ if exist "%~2" (
     del /Q "%~2\*.*" 2>nul
 )
 if not exist "%~2" mkdir "%~2"
-"%DOTNET%" publish "%CODE_DIR%src\%~1\%~1.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none -o "%~2"
+rem Publish flags live in src/<project>/Properties/PublishProfiles/win-x64.pubxml,
+rem so local builds and the GitHub Actions workflow cannot drift apart.
+"%DOTNET%" publish "%CODE_DIR%src\%~1\%~1.csproj" -p:PublishProfile=win-x64 -o "%~2"
 if errorlevel 1 exit /b 1
 echo.
 echo Publish OK: %~2\IEC104Simulator.exe
