@@ -172,6 +172,9 @@ namespace IEC104.App.Views
             // 回退 0.0.0.0 / 提权参数判定 / 管理窗口）。执行通道换成假的，绝不真动系统
             await RunIpAddressSelfCheckAsync(dir, viewModel);
 
+            // 1.11 新增界面的配色必须跟主题走：六套主题逐个量真实控件
+            await RunIpWindowThemeSelfCheckAsync(dir);
+
             // 验证信号区分组：按 ASDU 类型 ⇄ 按电力大类，两种都要验
             RunPointTabSelfCheck(dir, viewModel, mainWindow);
 
@@ -6978,6 +6981,180 @@ namespace IEC104.App.Views
                 AppSettingsStore.Save();
             }
         }
+
+        /// <summary>
+        /// 自检（1.11）：新增界面的配色必须跟着六套主题走。
+        ///
+        /// 【为什么不能只看"代码里写的是 DynamicResource"】
+        /// 新窗口只用了 Classes（panel / hint / primary）和裸控件，一个写死颜色都没有，
+        /// 读代码挑不出毛病。但裸控件（ListBox / ListBoxItem）此前**没有任何主题样式**，
+        /// 它们的前景与选中底色是 SimpleTheme 的默认值 —— 浅色主题下看着正常，
+        /// 一切到深色就是"深底压深字"，等于看不见。这种"半跟随"只能量真实控件。
+        ///
+        /// 两条都查：
+        ///   ① 颜色**等于**对应令牌（证明确实走主题，而不是碰巧像）；
+        ///   ② 前景/背景对比度 ≥ 4.5:1（证明任何一套主题下都看得清）。
+        /// </summary>
+        private static async Task RunIpWindowThemeSelfCheckAsync(string dir)
+        {
+            const double MinimumContrast = 4.5;
+            string originalId = ThemeService.Current?.Id ?? ThemeService.Options[0].Id;
+
+            IpManagerWindow window = new() { WindowStartupLocation = WindowStartupLocation.Manual };
+            window.Show();
+            await Task.Delay(500);
+
+            try
+            {
+                string darkShot = null;
+
+                foreach (AppThemeOption option in ThemeService.Options)
+                {
+                    ThemeService.Apply(option.Id, persist: false);
+
+                    // 选中一项：选中态那对"底/字"是最容易被默认值带走的地方
+                    ListBox nicList = window.FindControl<ListBox>("NicList");
+                    if (nicList != null && nicList.ItemCount > 0)
+                    {
+                        nicList.SelectedIndex = 0;
+                    }
+
+                    Dispatcher.UIThread.RunJobs();
+                    await SettleThemeAsync(window);
+
+                    Color surface = ResolveColor("SurfaceBrush");
+                    Color surfaceAlt = ResolveColor("SurfaceAltBrush");
+                    Color pageBg = ResolveColor("AppBackgroundBrush");
+                    Color textPrimary = ResolveColor("TextPrimaryBrush");
+                    Color primary = ResolveColor("PrimaryBrush");
+                    Color onPrimary = ResolveColor("OnPrimaryBrush");
+                    Color selection = ResolveColor("SelectionBrush");
+                    Color selectionText = ResolveColor("SelectionTextBrush");
+
+                    Border panel = window.GetVisualDescendants().OfType<Border>()
+                        .FirstOrDefault(border => border.Classes.Contains("panel"));
+
+                    // 「未选中」和「选中」两种列表项要分开量：
+                    // 选中项的墨色本来就该是 SelectionTextBrush，拿它去比 TextPrimaryBrush
+                    // 会得到一个假的"没跟主题"结论（第一版就是这么误报的）。
+                    ListBoxItem plainItem = nicList?.GetVisualDescendants().OfType<ListBoxItem>()
+                        .FirstOrDefault(item => !item.IsSelected);
+
+                    TextBlock nicName = plainItem?.GetVisualDescendants().OfType<TextBlock>()
+                        .FirstOrDefault(text => text.FontWeight == FontWeight.SemiBold);
+
+                    TextBlock hint = window.GetVisualDescendants().OfType<TextBlock>()
+                        .FirstOrDefault(text => text.Classes.Contains("hint"));
+
+                    Button primaryButton = window.GetVisualDescendants().OfType<Button>()
+                        .FirstOrDefault(button => button.Classes.Contains("primary"));
+
+                    DataGridColumnHeader header = window.GetVisualDescendants()
+                        .OfType<DataGridColumnHeader>().FirstOrDefault();
+
+                    // 「关闭」「刷新」这类裸 Button：没有任何 Classes，也就没有显式前景色，
+                    // 字色来自 SimpleTheme 的默认值。深色主题下如果 RequestedThemeVariant
+                    // 没跟着切，这里就会变成"深底深字"——必须单独量，主按钮轮不到它。
+                    Button plainButton = window.GetVisualDescendants().OfType<Button>()
+                        .FirstOrDefault(button => button.Classes.Count == 0
+                            && string.Equals(button.Content as string, "关闭", StringComparison.Ordinal));
+                    ContentPresenter plainPresenter = plainButton?.GetVisualDescendants()
+                        .OfType<ContentPresenter>().FirstOrDefault();
+
+                    ListBoxItem selectedItem = nicList?.GetVisualDescendants().OfType<ListBoxItem>()
+                        .FirstOrDefault(item => item.IsSelected);
+                    ContentPresenter selectedPresenter = selectedItem?.GetVisualDescendants()
+                        .OfType<ContentPresenter>().FirstOrDefault();
+
+                    Color nicFg = BrushColor(nicName?.Foreground);
+                    Color hintFg = BrushColor(hint?.Foreground);
+                    Color primaryBg = BrushColor(primaryButton?.Background);
+                    Color primaryFg = BrushColor(primaryButton?.Foreground);
+                    Color headerFg = BrushColor(header?.Foreground);
+                    Color headerBg = BrushColor(header?.Background);
+                    Color selectedBg = BrushColor(selectedPresenter?.Background);
+                    Color selectedFg = BrushColor(selectedItem?.Foreground);
+                    Color plainBg = BrushColor(plainPresenter?.Background);
+                    Color plainFg = BrushColor(plainButton?.Foreground);
+
+                    // 输入框：以前只设了圆角，底色描边墨色全走框架默认值，
+                    // 深色主题下是 #282828 中性灰——新窗口里最扎眼的一处"没跟主题"。
+                    TextBox addressBox = window.FindControl<TextBox>("NewAddressBox");
+                    Color boxBg = BrushColor(addressBox?.Background);
+                    Color boxFg = BrushColor(addressBox?.Foreground);
+
+                    // ① 是不是真的用了令牌（分开判，日志里能一眼看出是哪一处没跟）
+                    bool panelOk = panel != null && BrushColor(panel.Background) == surface;
+                    bool primaryOk = primaryBg == primary && primaryFg == onPrimary;
+                    bool nicOk = nicName == null || nicFg == textPrimary;
+                    bool selectedOk = selectedItem == null
+                        || (selectedBg == selection && selectedFg == selectionText);
+                    bool boxOk = addressBox == null
+                        || (boxBg == surfaceAlt && boxFg == textPrimary);
+                    bool tokenOk = panelOk && primaryOk && nicOk && selectedOk && boxOk;
+
+                    // ② 对比度（次级字在面板和窗口底上都可能出现，取更差的那个）
+                    List<(double Ratio, string Label)> pairs = new()
+                    {
+                        (Math.Min(ContrastRatio(hintFg, surface), ContrastRatio(hintFg, pageBg)), "次要字"),
+                        (ContrastRatio(primaryFg, primaryBg), "主按钮"),
+                        (ContrastRatio(headerFg, headerBg), "表头")
+                    };
+
+                    if (plainItem != null)
+                    {
+                        pairs.Add((ContrastRatio(nicFg, surface), "网卡名/面板"));
+                    }
+
+                    if (selectedItem != null)
+                    {
+                        pairs.Add((ContrastRatio(selectedFg, selectedBg), "列表选中"));
+                    }
+
+                    if (plainButton != null)
+                    {
+                        pairs.Add((ContrastRatio(plainFg, plainBg), "普通按钮"));
+                    }
+
+                    if (addressBox != null)
+                    {
+                        pairs.Add((ContrastRatio(boxFg, boxBg), "输入框"));
+                    }
+
+                    double worst = pairs.Min(pair => pair.Ratio);
+                    string worstLabel = pairs.First(pair => pair.Ratio == worst).Label;
+                    int bad = pairs.Count(pair => pair.Ratio < MinimumContrast);
+
+                    Log(dir, $"ip-theme[{option.Name}]: 令牌一致={tokenOk}"
+                        + $"[面板={panelOk} 主按钮={primaryOk} 网卡字={nicOk} 选中={selectedOk} 输入框={boxOk}] "
+                        + $"面板={HexOf(surface)} 主按钮={HexOf(primaryBg)}/{HexOf(primaryFg)} "
+                        + $"选中={HexOf(selectedBg)}/{HexOf(selectedFg)} "
+                        + $"普通按钮={HexOf(plainBg)}/{HexOf(plainFg)} "
+                        + $"输入框={HexOf(boxBg)}/{HexOf(boxFg)} "
+                        + $"最差={worst:0.00}:1({worstLabel}) => "
+                        + (tokenOk && bad == 0 ? "PASS" : "FAIL"));
+
+                    if (option.IsDark && darkShot == null)
+                    {
+                        darkShot = Path.Combine(dir, "48-IP地址管理-深色.png");
+                        Save(window, darkShot);
+                    }
+                }
+            }
+            finally
+            {
+                window.Close();
+                ThemeService.Apply(originalId, persist: false);
+                await Task.Delay(200);
+            }
+        }
+
+        /// <summary>画刷 → 颜色（非纯色或 null 一律当透明，用来暴露"没设颜色"）</summary>
+        private static Color BrushColor(IBrush brush) =>
+            brush is ISolidColorBrush solid ? solid.Color : Colors.Transparent;
+
+        /// <summary>#aarrggbb，日志里读起来比 Color 的 ToString 清楚</summary>
+        private static string HexOf(Color color) => $"#{color.A:x2}{color.R:x2}{color.G:x2}{color.B:x2}";
 
         /// <summary>日志里只放前 80 个字：断言的判据在 PASS/FAIL 上，全文会把日志冲得没法看</summary>
         private static string Trim(string text)

@@ -530,6 +530,29 @@
        类选择器（Button.primary 等）优先级更高，仍然可以各按各的场景覆盖。 -->
   <Style Selector="Button">
     <Setter Property="CornerRadius" Value="6" />
+    <!-- 底色与墨色也必须走令牌。
+         原来这一条只管圆角，颜色全交给框架默认值：六套主题量下来，
+         普通按钮只有两种灰——浅色一律 #F5F5F5（四套主题一模一样），
+         深色一律 #505050（一块跟主题无关的中性灰）。新窗口的「关闭」
+         「刷新」于是成了整个窗口里唯二没跟着主题走的控件。
+         浅色四套的 SurfaceAlt 都落在 #EDF2F8~#F5FAF6，改完几乎看不出差别；
+         深色则从灰变成偏主题的蓝灰。带 Classes 的按钮优先级更高，
+         Button.primary / subtle / caption 等照样各自覆盖。 -->
+    <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+
+  <!-- 悬停/按下写在 ContentPresenter 上，才能盖住框架默认的灰。
+       用主色浅底（和 Button.subtle 一致），浅色主题里 HoverBrush 与
+       SurfaceAlt 只差几个色阶，等于没有反馈。 -->
+  <Style Selector="Button:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+    <Setter Property="TextBlock.Foreground" Value="{DynamicResource PrimarySoftTextBrush}" />
+  </Style>
+
+  <Style Selector="Button:pressed /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource SelectionBrush}" />
+    <Setter Property="TextBlock.Foreground" Value="{DynamicResource SelectionTextBrush}" />
   </Style>
 
   <Style Selector="Button.primary">
@@ -750,17 +773,42 @@
     <Setter Property="Stroke" Value="{DynamicResource OnPrimaryBrush}" />
   </Style>
 
-  <!-- ── 输入类控件：统一圆角 ──────────────────────────────────
-       之前完全没定义 TextBox / ComboBox / NumericUpDown 的样式，
-       它们一直走内置模板的直角边框，跟四周 8px 圆角的卡片放在一起像是拼错了。
-       这里只统一"外形"（圆角、最小高度、内边距、垂直居中），
-       配色与焦点态交给主题，避免把六套主题的颜色写死进全局样式。
-       局部的类样式（如 TextBox.cellEdit）优先级更高，仍可覆盖。 -->
+  <!-- ── 输入类控件：圆角 + 配色都跟主题 ──────────────────────────
+       原来只统一了"外形"，配色写着"交给主题"——实际是交给了框架默认值：
+       深色主题下输入框是 #282828 中性灰 + #808080 灰边、字 #DEDEDE，
+       跟窗口底色不是一套；六套浅色则一律纯白，也谈不上"跟主题走"。
+       （1.11.0 之前没人发现，是因为以前的弹窗里输入框少、又多是白底。）
+
+       这里把底色/描边/墨色也接到令牌：用次级面做输入底——在白面板里
+       是浅灰、在深面板里比面板亮一档，两种情况下都看得出"这里能输入"；
+       描边走 BorderLine，字走 TextPrimary。焦点态另给主色描边，
+       否则模板默认会画一圈系统蓝，和主题主色打架。
+       局部类样式（TextBox.cellEdit 等）优先级更高，仍可覆盖。 -->
   <Style Selector="TextBox">
     <Setter Property="CornerRadius" Value="6" />
     <Setter Property="MinHeight" Value="30" />
     <Setter Property="Padding" Value="8,0" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+
+  <!-- 悬停/焦点要写在模板里的 Border 上：框架自带的那两条规则直接改这个
+       Border 的 Background/BorderBrush，模板绑定拗不过它们。
+       声明顺序在主题之后，同优先级时后写的赢。
+       底色两条都写回 SurfaceAlt：不是在"换个底色"，而是为了压掉框架
+       自带的灰底。若这里写 SurfaceBrush，会和面板底色同色——浅色变纯白、
+       深色直接糊进面板，输入区就看不出来了。 -->
+  <Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+  </Style>
+
+  <Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}" />
   </Style>
 
   <Style Selector="ComboBox">
@@ -768,11 +816,23 @@
     <Setter Property="MinHeight" Value="30" />
     <Setter Property="Padding" Value="8,0" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+
+  <Style Selector="ComboBox:pointerover /template/ Border#Background">
+    <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
   </Style>
 
   <Style Selector="NumericUpDown">
     <Setter Property="CornerRadius" Value="6" />
     <Setter Property="MinHeight" Value="30" />
+    <Setter Property="Background" Value="{DynamicResource SurfaceAltBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderLineBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
   </Style>
 
   <!-- 多行输入不要被 MinHeight 拉成一行高，也不该垂直居中 -->
@@ -1051,6 +1111,56 @@
 
   <Style Selector="Button.chevron:pointerover /template/ ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}" />
+  </Style>
+
+  <!-- ══ 通用列表（1.11）══
+       ListBox 以前只有侧栏、页签栏、设置导航这三处**带 Class 的**专属样式，
+       裸 ListBox 一直没人管。新加的「IP 地址管理」网卡列表正是裸的，
+       于是列表项的前景/选中底色全是 SimpleTheme 的默认值 ——
+       深色主题下就成了"深底压深字"，等于看不见。
+
+       这里补一份**通用**样式，颜色全部走语义令牌：
+         · 未选中：透明底 + 正文墨色（列表本身铺在 panel 上）
+         · 悬停：RowHoverBrush
+         · 选中：SelectionBrush + SelectionTextBrush（和表格选中行同一套）
+       下面那几处带 Class 的专属样式更具体，会覆盖这里的圆角与内边距，不受影响。 -->
+  <Style Selector="ListBox">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+  </Style>
+
+  <Style Selector="ListBoxItem">
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Margin" Value="2,1" />
+    <Setter Property="Padding" Value="8,4" />
+  </Style>
+
+  <Style Selector="ListBoxItem /template/ ContentPresenter">
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Padding" Value="8,4" />
+  </Style>
+
+  <!-- 悬停 / 选中的底色：hover 写在前面、selected 写在后面。
+       Avalonia 的样式是"后匹配的覆盖先匹配的"，两条同时命中（选中项被悬停）时
+       必须让 selected 赢，否则选中的行一悬停就变回悬停色，看着像"点丢了"。 -->
+  <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource RowHoverBrush}" />
+  </Style>
+
+  <Style Selector="ListBoxItem:pointerover">
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+
+  <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource SelectionBrush}" />
+  </Style>
+
+  <!-- 前景显式设一次：项里的 TextBlock 没有自己的 Foreground，
+       靠 TextElement.Foreground 的继承拿颜色；不设的话深色主题下是 SimpleTheme 的深字。 -->
+  <Style Selector="ListBoxItem:selected">
+    <Setter Property="Foreground" Value="{DynamicResource SelectionTextBrush}" />
   </Style>
 
   <!-- 侧栏的通道 / 从站列表：选中块必须是圆角。
