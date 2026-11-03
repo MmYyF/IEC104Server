@@ -27,6 +27,9 @@
 *.targets  text
 *.md       text
 *.json     text
+# .ps1 只定换行，不动 BOM：scripts\ 下的脚本含中文，必须带 UTF-8 BOM，
+# 否则 Windows PowerShell 5.1 会按 ANSI(GBK) 解码，报"字符串缺少终止符"。
+*.ps1      text eol=lf
 
 # 二进制：不要猜、不转换
 *.png      binary

@@ -56,69 +56,16 @@ jobs:
           $extra = Get-ChildItem dist -File | Where-Object { $_.Name -notin @('IEC104-Server.exe') }
           if ($extra) { throw "发布目录混进了多余文件: $($extra.Name -join ', ')" }
 
+      # 逻辑放在 scripts/make-release-manifest.ps1 里，CI 只做调用——
+      # 这样同一段生成逻辑能在本机先跑一遍（发版脚本最容易在这里出错，
+      # 而它错了要等 tag 推上去、CI 跑完才暴露）。
       - name: Checksum + update.json + release body
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          $tag = if ('${{ github.event.inputs.tag }}' -ne '') { '${{ github.event.inputs.tag }}' } else { $env:GITHUB_REF_NAME }
-          $version = $tag.TrimStart('v')
-          $repo = $env:GITHUB_REPOSITORY
-          $exe = 'dist/IEC104-Server.exe'
-
-          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
-          "$hash  IEC104-Server.exe" | Set-Content 'dist/IEC104-Server.exe.sha256' -Encoding ascii -NoNewline
-
-          # ── 从 docs/CHANGELOG.md 抽出这一版，作为 Release 正文与 update.json 的说明 ──
-          # 格式：## <版本号> <标题> / YYYY-MM-DD / - 条目
-          $lines = Get-Content 'docs/CHANGELOG.md' -Encoding UTF8
-          $title = ''
-          $date = ''
-          $notes = @()
-          $hit = $false
-          foreach ($line in $lines) {
-            if ($line -match '^##\s+(\d+\.\d+\.\d+)\b\s*(.*)$') {
-              if ($hit) { break }                    # 下一段开始，结束
-              if ($matches[1] -eq $version) { $hit = $true; $title = $matches[2].Trim(); continue }
-            }
-            elseif ($hit) {
-              if ($line -match '^-\s+(.*)$') { $notes += $matches[1].Trim() }
-              elseif ($line.Trim() -ne '' -and $date -eq '') { $date = $line.Trim() }
-            }
-          }
-          if (-not $hit) { throw "docs/CHANGELOG.md 里没有 $version 这一段，先补更新说明再打标签" }
-          if ($notes.Count -eq 0) { throw "$version 那一段没有条目（- 开头），Release 正文会空" }
-
-          $size = (Get-Item $exe).Length
-          $assetUrl = "https://github.com/$repo/releases/download/$tag/IEC104-Server.exe"
-
-          $payload = [ordered]@{
-            version = $version
-            tag     = $tag
-            date    = $date
-            title   = $title
-            notes   = $notes
-            asset   = [ordered]@{
-              name   = 'IEC104-Server.exe'
-              url    = $assetUrl
-              size   = $size
-              sha256 = $hash
-            }
-          }
-          $payload | ConvertTo-Json -Depth 6 | Set-Content 'dist/update.json' -Encoding utf8
-
-          # ── Release 正文：人看的那份 ──
-          $body = @()
-          $body += "## $version $title"
-          $body += ''
-          $body += ($notes | ForEach-Object { "- $_" })
-          $body += ''
-          $body += '---'
-          $body += '下载 `IEC104-Server.exe` 双击即用（自包含单文件，不需要装 .NET）。'
-          $body += ''
-          $body += "SHA256：``$hash``"
-          $body | Set-Content 'dist/RELEASE_BODY.md' -Encoding utf8
-
-          Write-Output "version=$version date=$date notes=$($notes.Count) size=$size"
+          ./scripts/make-release-manifest.ps1 `
+            -Tag '${{ github.event.inputs.tag || github.ref_name }}' `
+            -Repository '${{ github.repository }}' `
+            -DistDir dist
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
