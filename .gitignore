@@ -31,6 +31,11 @@ publish-*/
 pubfix/
 *.publishproj
 
+# README 与 CI 都用 `dotnet publish ... -o dist`，产物 45MB。
+# 不忽略的话，本地跑一次 README 里的命令，git status 里就多出一个大 exe，
+# 顺手 `git add .` 就把它带进仓库了。
+dist/
+
 # ── 自检产物 ──────────────────────────────────────────────────
 # --capture-ui 每次跑都覆盖这 140 多张截图（约 3MB）。
 # 截图是"验完就丢"的证据，要留证据看 docs/ 或对话记录，不靠仓库版本控制。
