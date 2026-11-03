@@ -82,6 +82,15 @@ namespace IEC104.App.Services
                 return IpChangeResult.Failed(address, "找不到对应的网卡，未执行。");
             }
 
+            // 网卡名在"父进程决定要加"到"子进程真正执行"之间可能已经变了（拔了、
+            // 被禁用了、UAC 窗口停留时用户去改了名）。这时 netsh 会给一句
+            // "文件名、目录名或卷标语法不正确"——本地化且完全看不出是网卡没了。
+            // 所以在执行前先确认这个名字还在。
+            if (!NicExists(nicName))
+            {
+                return IpChangeResult.Failed(address, $"网卡“{nicName}”现在不在本机（可能被禁用或已拔出）。");
+            }
+
             string mask = string.IsNullOrWhiteSpace(request.Mask) ? IpMask.DefaultMask : request.Mask.Trim();
 
             string output;
@@ -109,6 +118,21 @@ namespace IEC104.App.Services
 
         /// <summary>netsh 的名字参数里不可能有引号，有就说明数据脏了，去掉免得拼坏命令行</summary>
         private static string Clean(string text) => (text ?? string.Empty).Replace("\"", string.Empty);
+
+        /// <summary>系统里还有没有叫这个名字的网卡（netsh 只认名字，所以只能按名字查）</summary>
+        private static bool NicExists(string nicName)
+        {
+            try
+            {
+                return NetworkInterface.GetAllNetworkInterfaces().Any(nic =>
+                    string.Equals(nic.Name, nicName, StringComparison.OrdinalIgnoreCase));
+            }
+            catch
+            {
+                // 枚举失败就不拦：真找不到时 netsh 那条路还会失败，只是提示难懂一点
+                return true;
+            }
+        }
 
         private static string Describe(string output, string fallback)
         {
@@ -234,7 +258,12 @@ namespace IEC104.App.Services
     {
         public const string Flag = "--ip-helper";
 
-        private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
+        private static readonly JsonSerializerOptions Options = new()
+        {
+            WriteIndented = true,
+            // 中文不要被转成 \uXXXX：这两个文件虽然是临时的，但出问题时要靠人打开看
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
 
         public static bool IsInvocation(string[] args)
         {
