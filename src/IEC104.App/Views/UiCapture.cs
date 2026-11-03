@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -174,6 +175,13 @@ namespace IEC104.App.Views
 
             // 1.11 新增界面的配色必须跟主题走：六套主题逐个量真实控件
             await RunIpWindowThemeSelfCheckAsync(dir);
+
+            // 1.12：更新说明改成读 docs/CHANGELOG.md（唯一来源），先验解析与版本比较
+            RunChangelogSelfCheck(dir);
+
+            // 1.12：在线更新（解析两种清单 / 多源回退 / 哈希校验 / 替换与回滚 / 窗口）
+            // 网络通道换成假的：真发请求会慢、会被墙、还会因为 GitHub 挂了让自检莫名变红
+            await RunUpdateSelfCheckAsync(dir);
 
             // 验证信号区分组：按 ASDU 类型 ⇄ 按电力大类，两种都要验
             RunPointTabSelfCheck(dir, viewModel, mainWindow);
@@ -6995,6 +7003,368 @@ namespace IEC104.App.Views
         ///   ① 颜色**等于**对应令牌（证明确实走主题，而不是碰巧像）；
         ///   ② 前景/背景对比度 ≥ 4.5:1（证明任何一套主题下都看得清）。
         /// </summary>
+        /// <summary>
+        /// 自检：更新说明的解析（1.12 起改为读 docs/CHANGELOG.md）。
+        ///
+        /// 这里喂的是**手写字符串**，不是嵌入资源——两件事必须分开验：
+        /// 「解析规则对不对」和「资源有没有嵌进程序集」。
+        /// 混成一条的话，资源丢了也会看着像解析写错了，排查方向一开始就偏。
+        /// </summary>
+        private static void RunChangelogSelfCheck(string dir)
+        {
+            const string Sample =
+                "# 说明\n\n"
+                + "```\n"
+                + "## <版本号> <一句话标题>\n"
+                + "YYYY-MM-DD\n"
+                + "- 格式示例\n"
+                + "```\n\n"
+                + "## 9.9.9 测试版\n"
+                + "2026-01-02\n"
+                + "- 甲\n"
+                + "- 乙\n\n"
+                + "## 9.9.8 上一版\n"
+                + "2025-12-01\n"
+                + "- 丙\n";
+
+            IReadOnlyList<ReleaseNote> notes = ReleaseNotes.ParseMarkdown(Sample);
+
+            bool countOk = notes.Count == 2;
+            bool firstOk = notes.Count > 0
+                && notes[0].Version == "9.9.9"
+                && notes[0].Title == "测试版"
+                && notes[0].Date == "2026-01-02"
+                && notes[0].Items.Count == 2;
+            bool secondOk = notes.Count > 1
+                && notes[1].Version == "9.9.8"
+                && notes[1].Items.Count == 1;
+
+            // 代码块里那段"格式示例"不能变成一条版本号为 "<版本号>" 的假记录
+            bool fenceSkipped = notes.All(note => !note.Version.Contains("<", StringComparison.Ordinal));
+
+            // 嵌入资源：真读到了，而且不是兜底文案（兜底只有一个条目）
+            bool embeddedOk = ReleaseNotes.All.Count > 10 && ReleaseNotes.All[0].Items.Count > 0;
+
+            bool compareOk = ReleaseNotes.Compare("1.10.0", "1.9.9") > 0
+                && ReleaseNotes.Compare("1.9.9", "1.10.0") < 0
+                && ReleaseNotes.Compare("1.11", "1.11.0") == 0;
+
+            Log(dir, "changelog: 解析=" + notes.Count + "条"
+                + " 首条=" + Trim(notes.Count > 0 ? notes[0].Version + "/" + notes[0].Title : "(空)")
+                + " 条目数对=" + firstOk
+                + " 第二条=" + secondOk
+                + " 围栏已跳过=" + fenceSkipped
+                + " 嵌入=" + ReleaseNotes.All.Count + "条/最新=" + ReleaseNotes.All[0].Version
+                + " 版本比较=" + compareOk + " => "
+                + (countOk && firstOk && secondOk && fenceSkipped && embeddedOk && compareOk ? "PASS" : "FAIL"));
+        }
+
+        /// <summary>
+        /// 自检：在线更新（1.12）。
+        ///
+        /// 【为什么全程用假通道】
+        /// 真请求有三个问题：慢（几十秒）、不稳定（GitHub 在国内经常连不上）、
+        /// 不可重复（同一个断言今天绿明天红）。而这里真正容易写错的是**判断逻辑**：
+        /// 版本怎么比、多个源怎么回退、哈希对不上怎么办、替换失败怎么回滚。
+        /// 这些都能用假数据验，而且必须验——它们才是"更新把软件搞坏"的源头。
+        ///
+        /// 真链路的验收放在人工：装一个旧版本，点检查更新，看它能不能升上来。
+        /// </summary>
+        private static async Task RunUpdateSelfCheckAsync(string dir)
+        {
+            IUpdateTransport original = UpdateService.Transport;
+            string sandbox = Path.Combine(dir, "_update_sandbox");
+
+            try
+            {
+                // 注意：这个类里有同名属性 Directory，会把 System.IO.Directory 遮住，必须写全名
+                System.IO.Directory.CreateDirectory(sandbox);
+                var transport = new FakeUpdateTransport();
+                UpdateService.Transport = transport;
+
+                // ── ① 两种清单格式 ──
+                string manifest =
+                    "{ \"version\": \"9.9.9\", \"tag\": \"v9.9.9\", \"date\": \"2026-02-03\","
+                    + " \"title\": \"测试版标题\", \"notes\": [\"第一条\", \"第二条\"],"
+                    + " \"asset\": { \"name\": \"IEC104-Server.exe\","
+                    + " \"url\": \"https://example.com/a.exe\", \"size\": 4,"
+                    + " \"sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\" } }";
+
+                string release =
+                    "{ \"tag_name\": \"v9.9.8\", \"name\": \"9.9.8 的标题\","
+                    + " \"published_at\": \"2026-01-02T03:04:05Z\","
+                    + " \"body\": \"## 9.9.8\\n说明文字不算条目\\n- 甲\\n- 乙\\n\\n---\\n下载说明也不算\","
+                    + " \"html_url\": \"https://example.com/rel\","
+                    + " \"assets\": ["
+                    + "{ \"name\": \"IEC104-Server.exe.sha256\","
+                    + " \"browser_download_url\": \"https://example.com/a.exe.sha256\", \"size\": 80 },"
+                    + "{ \"name\": \"IEC104-Server.exe\","
+                    + " \"browser_download_url\": \"https://example.com/a.exe\", \"size\": 4 } ] }";
+
+                UpdateInfo parsedManifest = UpdateService.ParseManifest(manifest, "镜像", "https://example.com/rel");
+                UpdateInfo parsedRelease = UpdateService.ParseGitHubRelease(release, "GitHub API");
+
+                bool parseOk = parsedManifest != null
+                    && parsedManifest.Version == "9.9.9"
+                    && parsedManifest.Title == "测试版标题"
+                    && parsedManifest.Notes.Count == 2
+                    && parsedManifest.Asset != null
+                    && parsedManifest.Asset.Url == "https://example.com/a.exe"
+                    && parsedManifest.Asset.Size == 4
+                    && parsedRelease != null
+                    && parsedRelease.Version == "9.9.8"
+                    && parsedRelease.Notes.Count == 2        // 只认 "- " 开头的行
+                    && parsedRelease.Asset != null
+                    && parsedRelease.Asset.Name == "IEC104-Server.exe"
+                    && parsedRelease.ReleasePageUrl == "https://example.com/rel";
+
+                Log(dir, "update-parse: 清单=" + Trim(parsedManifest?.Version)
+                    + "/" + parsedManifest?.Notes.Count + "条"
+                    + " 发布=" + Trim(parsedRelease?.Version)
+                    + "/" + parsedRelease?.Notes.Count + "条"
+                    + " 资产=" + Trim(parsedRelease?.Asset?.Name)
+                    + " 说明只取条目行=True => " + (parseOk ? "PASS" : "FAIL"));
+
+                // ── ② 多源回退：第一个能应答的源说了算 ──
+                transport.Reset(url => url.Contains("mirror")
+                    ? manifest                                        // 镜像说有新版
+                    : throw new HttpRequestException("不该轮到这里"));
+
+                UpdateCheckResult newer = await UpdateService.CheckAsync(
+                    new[]
+                    {
+                        new UpdateSource("镜像", "https://mirror/update.json", true),
+                        new UpdateSource("GitHub API", "https://api/latest", false),
+                    },
+                    CancellationToken.None);
+
+                // 计数必须**当场**取下来：紧接着的 Reset 会把它清零，
+                // 事后再读读到的是"下一次"的数（这个项目栽过四次的坑）
+                int sourcesForNewer = transport.SourcesQueried;
+
+                transport.Reset(url => url.Contains("mirror")
+                    ? manifest.Replace("9.9.9", "1.0.0")               // 镜像说自己是旧版
+                    : throw new HttpRequestException("不该轮到这里"));
+
+                UpdateCheckResult upToDate = await UpdateService.CheckAsync(
+                    new[]
+                    {
+                        new UpdateSource("镜像", "https://mirror/update.json", true),
+                        new UpdateSource("GitHub API", "https://api/latest", false),
+                    },
+                    CancellationToken.None);
+
+                int sourcesForUpToDate = transport.SourcesQueried;
+
+                transport.Reset(_ => throw new HttpRequestException("网络不通"));
+
+                UpdateCheckResult allFail = await UpdateService.CheckAsync(
+                    new[]
+                    {
+                        new UpdateSource("镜像", "https://mirror/update.json", true),
+                        new UpdateSource("GitHub API", "https://api/latest", false),
+                    },
+                    CancellationToken.None);
+
+                bool checkOk = newer.Status == UpdateStatus.Newer
+                    && newer.Info?.Version == "9.9.9"
+                    && newer.Info.SourceName == "镜像"
+                    && upToDate.Status == UpdateStatus.UpToDate
+                    // 第一个源就给了结论 → 只问了 1 个源；问了 2 个说明回退逻辑写错了
+                    && sourcesForNewer == 1
+                    && sourcesForUpToDate == 1
+                    && allFail.Status == UpdateStatus.Unavailable
+                    && allFail.Message.Contains("都连不上", StringComparison.Ordinal);
+
+                Log(dir, "update-check: 有新版=" + newer.Status + "/" + Trim(newer.Info?.Version)
+                    + " 已最新=" + upToDate.Status
+                    + " 全挂=" + allFail.Status + "(" + Trim(allFail.Message) + ")"
+                    + " 查询源数=" + sourcesForNewer + "/" + sourcesForUpToDate + "(应为 1/1)"
+                    + " => " + (checkOk ? "PASS" : "FAIL"));
+
+                // ── ③ 下载校验：哈希不对必须拒绝，而且不留文件 ──
+                byte[] payload = Encoding.UTF8.GetBytes("IEC104-Server fake payload");
+                string goodSha = UpdateService.Sha256Of(payload);
+                string downloadPath = Path.Combine(sandbox, "downloaded.exe");
+
+                transport.Payload = payload;
+                UpdateInfo downloadable = UpdateService.ParseManifest(
+                    manifest.Replace("0000000000000000000000000000000000000000000000000000000000000000", goodSha)
+                        .Replace("\"size\": 4", "\"size\": " + payload.Length),
+                    "镜像", string.Empty);
+
+                string saved = await UpdateService.DownloadAsync(
+                    downloadable, downloadPath, null, CancellationToken.None);
+                bool downloadOk = File.Exists(saved)
+                    && UpdateService.Sha256OfFile(saved) == goodSha;
+
+                // 换个错误的哈希：必须抛，且不许把坏文件留在盘上
+                string badPath = Path.Combine(sandbox, "bad.exe");
+                UpdateInfo tampered = UpdateService.ParseManifest(
+                    manifest.Replace("\"size\": 4", "\"size\": " + payload.Length),
+                    "镜像", string.Empty);
+
+                bool rejected = false;
+                string reason = string.Empty;
+                try
+                {
+                    await UpdateService.DownloadAsync(tampered, badPath, null, CancellationToken.None);
+                }
+                catch (InvalidOperationException exception)
+                {
+                    rejected = true;
+                    reason = exception.Message;
+                }
+
+                bool shaOk = downloadOk && rejected && !File.Exists(badPath);
+
+                Log(dir, "update-download: 校验通过=" + downloadOk
+                    + " 哈希不符被拒=" + rejected + "(" + Trim(reason) + ")"
+                    + " 坏文件未落盘=" + !File.Exists(badPath)
+                    + " => " + (shaOk ? "PASS" : "FAIL"));
+
+                // ── ④ 替换：旧文件改名备份、新文件就位、失败不动原文件 ──
+                string target = Path.Combine(sandbox, "IEC104-Server.exe");
+                string incoming = Path.Combine(sandbox, "incoming.exe");
+                File.WriteAllText(target, "OLD");
+                File.WriteAllText(incoming, "NEW");
+
+                UpdateInstaller.Apply(incoming, target);
+                bool swapped = File.ReadAllText(target) == "NEW"
+                    && File.Exists(target + UpdateInstaller.BackupSuffix)
+                    && File.ReadAllText(target + UpdateInstaller.BackupSuffix) == "OLD"
+                    && !File.Exists(incoming);
+
+                UpdateInstaller.CleanupLeftover(target);
+                bool cleaned = !File.Exists(target + UpdateInstaller.BackupSuffix);
+
+                // 源文件不存在时必须抛，且原程序保持可用
+                bool keptIntact = false;
+                try
+                {
+                    UpdateInstaller.Apply(Path.Combine(sandbox, "does-not-exist.exe"), target);
+                }
+                catch (InvalidOperationException)
+                {
+                    keptIntact = File.ReadAllText(target) == "NEW";
+                }
+
+                bool applyOk = swapped && cleaned && keptIntact;
+
+                Log(dir, "update-apply: 已替换=" + swapped
+                    + " 备份已清=" + cleaned
+                    + " 失败保持原样=" + keptIntact
+                    + " => " + (applyOk ? "PASS" : "FAIL"));
+
+                // ── ⑤ 窗口：有新版时三个按钮都在、说明铺出来 ──
+                var viewModel = new UpdateViewModel();
+                var window = new UpdateWindow(viewModel)
+                {
+                    WindowStartupLocation = WindowStartupLocation.Manual,
+                };
+                window.Show();
+                await Task.Delay(300);
+
+                try
+                {
+                    // 用假结果覆盖窗口自己那次检查（真检查在没配仓库时就是"没配源"）
+                    viewModel.Apply(new UpdateCheckResult
+                    {
+                        Status = UpdateStatus.Newer,
+                        Info = parsedManifest,
+                    });
+
+                    Dispatcher.UIThread.RunJobs();
+                    await SettleThemeAsync(window);
+
+                    var buttons = window.GetVisualDescendants().OfType<Button>().ToList();
+                    int noteRows = window.GetVisualDescendants().OfType<TextBlock>()
+                        .Count(text => text.Text == parsedManifest.Notes[0]);
+
+                    // HasError 必须是 false：窗口打开时会先自动查一次（没配源 → 报错），
+                    // 随后 Apply 成功结果时若不清错误，界面就会"成功却挂着红字"
+                    bool windowOk = viewModel.HasUpdate
+                        && viewModel.DownloadButtonText == "下载并安装"
+                        && buttons.Count == 3
+                        && noteRows == 1
+                        && !viewModel.HasError
+                        && !string.IsNullOrEmpty(viewModel.StatusText);
+
+                    Save(window, Path.Combine(dir, "49-检查更新.png"));
+
+                    Log(dir, "update-window: 有新版本=" + viewModel.HasUpdate
+                        + " 按钮=" + buttons.Count + "(下载并安装/查看发布页/关闭)"
+                        + " 说明已渲染=" + noteRows
+                        + " 无残留错误=" + !viewModel.HasError
+                        + " 状态=" + Trim(viewModel.StatusText)
+                        + " => " + (windowOk ? "PASS" : "FAIL"));
+                }
+                finally
+                {
+                    window.Close();
+                    await Task.Delay(150);
+                }
+            }
+            finally
+            {
+                UpdateService.Transport = original;
+                try
+                {
+                    if (System.IO.Directory.Exists(sandbox))
+                    {
+                        System.IO.Directory.Delete(sandbox, true);
+                    }
+                }
+                catch (Exception)
+                {
+                    // 沙箱清不掉不影响结论
+                }
+            }
+        }
+
+        /// <summary>
+        /// 假通道：按 URL 决定返回什么，或抛"网络不通"。
+        /// 只统计"查了几个源"，用来验证"第一个源给了结论就不再往下问"。
+        /// </summary>
+        private sealed class FakeUpdateTransport : IUpdateTransport
+        {
+            private Func<string, string> _factory;
+            private bool _countSources;
+
+            public byte[] Payload { get; set; } = Array.Empty<byte>();
+
+            /// <summary>GetStringAsync 被调了几次</summary>
+            public int StringCalls { get; private set; }
+
+            /// <summary>上一次 Reset 之后问过几个不同的源</summary>
+            public int SourcesQueried { get; private set; }
+
+            public void Reset(Func<string, string> factory)
+            {
+                _factory = factory;
+                _countSources = true;
+                SourcesQueried = 0;
+                StringCalls = 0;
+            }
+
+            public Task<string> GetStringAsync(string url, CancellationToken token)
+            {
+                StringCalls++;
+                if (_countSources)
+                {
+                    SourcesQueried++;
+                }
+
+                return Task.FromResult(_factory(url));
+            }
+
+            public Task<byte[]> GetBytesAsync(string url, IProgress<double> progress, CancellationToken token)
+            {
+                progress?.Report(1.0);
+                return Task.FromResult(Payload);
+            }
+        }
+
         private static async Task RunIpWindowThemeSelfCheckAsync(string dir)
         {
             const double MinimumContrast = 4.5;

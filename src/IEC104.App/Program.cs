@@ -37,6 +37,11 @@ namespace IEC104.App
             InstallCrashLogging();
             Trace("main-enter args=" + string.Join(' ', args));
 
+            // 上次在线更新留下的备份（IEC104-Server.exe.old）在这一次启动时清掉。
+            // 放在最前面：更新流程会把旧 exe 改名成 .old 再放新的，如果上次写完新文件
+            // 后重启失败（比如用户立刻又关掉了），那个 .old 就会一直躺在目录里。
+            Services.UpdateInstaller.CleanupLeftover(Environment.ProcessPath);
+
             // 启动链路自己再兜一层。AppDomain.UnhandledException 收得到，但它拿到的
             // 异常未必带着这句"崩在哪个阶段"的上下文；而且 certaines 平台上
             // 启动期异常会先被 Avalonia 的 platform 探测吞一轮，这里包一层最稳。

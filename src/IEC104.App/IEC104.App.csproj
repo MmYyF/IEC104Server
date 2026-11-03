@@ -74,8 +74,8 @@
                 工具条最左加保存按钮（有改动亮主题主色）、状态栏显示未保存/已保存时刻，
                 标题栏带工程名与 ● 脏标记；启动自动恢复上次工程并显示欢迎页，
                 欢迎页给继续编辑 / 新建 / 打开 / 最近使用；新增「按初始值复位」 -->
-    <Version>1.11.0</Version>
-    <FileVersion>1.11.0.0</FileVersion>
+    <Version>1.12.0</Version>
+    <FileVersion>1.12.0.0</FileVersion>
     <Product>IEC104-Server</Product>
     <AssemblyTitle>IEC104-Server</AssemblyTitle>
     <Description>IEC 60870-5-101/104 从站仿真工具</Description>
@@ -87,6 +87,22 @@
 
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <!--
+    更新说明的唯一来源：仓库根目录的 docs/CHANGELOG.md。
+    嵌进程序是为了"不联网也能查我这版改了什么"（关于 → 更新说明），
+    而 GitHub Release 正文与在线更新的 update.json 由 CI 从**同一个文件**抽，
+    免得同一段文字维护三份、发版当天对不上。
+
+    LogicalName 固定成 CHANGELOG.md：ReleaseNotes.ReadEmbedded() 按这个名字找，
+    不随 Link 或目录结构变化。文件放在 docs/ 但逻辑名不带路径，是对外发布时
+    只想要一份、又不想把 docs 整个塞进程序集。
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\docs\CHANGELOG.md"
+                      Link="Services\CHANGELOG.md"
+                      LogicalName="CHANGELOG.md" />
   </ItemGroup>
 
   <!--

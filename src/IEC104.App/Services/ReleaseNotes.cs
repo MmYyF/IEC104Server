@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.IO;
+using System.Text;
 
 namespace IEC104.App.Services
 {
@@ -35,192 +36,54 @@ namespace IEC104.App.Services
     }
 
     /// <summary>
-    /// 更新说明的数据源。
+    /// 更新说明的数据源：**编译时嵌入的 <c>docs/CHANGELOG.md</c>**。
     ///
-    /// 【为什么先内置】
-    /// 仓库还没发布，没有 GitHub Releases 可拉。但"更新说明"这件事不能等：
-    /// 用户装上之后，界面上就该能查"我这版改了什么"——这正是他判断要不要升级的依据。
-    /// 所以先内置一份随程序走：**离线也看得见，不联网也能查**。
+    /// 【为什么要改成读文件】
+    /// 1.10 之前这份说明是写死在 C# 里的 `new("1.9.1", ...)` 列表。接上在线更新之后，
+    /// 同一段文字要出现在三个地方：程序里的"关于 → 更新说明"、GitHub Release 正文、
+    /// 在线更新用的 `update.json`。三处各写一遍，必然漂移——发版当天对不上是最常见的翻车方式。
+    /// 现在只留 `docs/CHANGELOG.md` 一份：编译时嵌进程序（离线也看得见），
+    /// CI 再从**同一个文件**抽出对应版本，写进 Release 正文与 `update.json`。
     ///
-    /// 【以后怎么接在线更新】
-    /// 发布到 GitHub 之后，只需要加一个 `FetchAsync()` 从
-    /// `https://api.github.com/repos/{owner}/{repo}/releases` 拉到新的 ReleaseNote 列表，
-    /// 合并/覆盖 <see cref="All"/> 即可，界面层不用改（见 AboutPageViewModel 的用法）。
-    /// 判断"有没有新版本"就是拿 <see cref="AppInfo.Version"/> 和列表里最大的版本号比。
-    /// 这也是为什么这一版要把版本、日期拆成字段而不是一坨 HTML ——
-    /// 结构化的数据才能既渲染界面、又做版本比较。
+    /// 【为什么要结构化】
+    /// 判断"有没有新版本"要拿版本号做数值比较（1.10 > 1.9，字典序会判反）。
+    /// 所以版本、日期、条目在文件里是分开的字段，而不是一坨 HTML——
+    /// 结构化数据才能既渲染界面、又做版本比较。
+    ///
+    /// 【解析格式】见文件开头的说明：
+    /// <code>
+    /// ## 1.11.0 一句话标题
+    /// 2026-11-03
+    /// - 条目
+    /// </code>
+    /// 代码块（```）里的示例不参与解析——否则文件里那段格式说明会变成一条假版本。
     /// </summary>
     public static class ReleaseNotes
     {
+        /// <summary>嵌入资源的逻辑名（csproj 里用 LogicalName 固定，不依赖目录结构）</summary>
+        private const string ResourceName = "CHANGELOG.md";
+
         /// <summary>
-        /// 全部版本，**从新到旧**。
-        /// 顺序不能乱：界面按这个顺序铺，第一项就是最新版。
+        /// 全部版本，**从新到旧**（顺序跟 CHANGELOG.md 一致）。
+        /// 界面按这个顺序铺，第一项就是最新版。
         /// </summary>
-        public static IReadOnlyList<ReleaseNote> All { get; } = new List<ReleaseNote>
-        {
-            new("1.11.0", "本机没有那个 IP，现在能自己补上",
-                "2026-11-03",
-                "新建从站时当场告诉你「本机没有这个 IP」，可以勾上「启动通道时自动把 IP 添加到所选网卡」，那么启动时先补地址再监听",
-                "工具菜单新增「IP 地址管理」：看本机每块网卡的地址、手工添加、删掉本工具加过的地址（一键清理）",
-                "IP 地址管理支持批量添加：填起始地址 + 步长 + 个数，一次加一串（整批只弹一次授权），本机已有的自动跳过；起始地址默认接着这块网卡上最大的那个往下排",
-                "地址加到哪块网卡记在通道上（存的是网卡 GUID，改名也不会错）；批量建从站时可以统一选一块，建完后逐条再改",
-                "本机已经有这个地址就跳过，不会在两块网卡上各挂一份",
-                "启动失败终于说得清楚了：报 10049 时说「本机没有这个地址」并给出三条出路，报 10048 时说「端口被占用」",
-                "自动添加失败会回退成监听 0.0.0.0 让通道先起来，但通道状态、状态栏、日志三处都会写明「已回退」，绝不悄悄换地址",
-                "添加地址需要管理员权限，会弹一次授权（一次覆盖整批）；本工具加过的地址有账本，随时能一键收拾干净"),
-
-            new("1.10.2", "修三处用起来别扭的地方",
-                "2026-11-03",
-                "报文监视：点中一条报文后，下面那块原始字节不会再自己变回「未选中」——列表一边刷新一边保留你的选中项",
-                "报文监视：原始字节终于有内容了（之前那一格永远是空的，因为生成记录时没把报文编码后带过来）",
-                "报文监视：新增「值」一列，遥信显示合/分、双点显示中间态/分/合、遥测显示数值；品质异常时追加 (IV)/(BL)，一眼看出哪几行不可信",
-                "批量变化：设好规则后可以把参数界面关掉，数据继续变；工具条「批量变化」右边会在变化时多出停止按钮，状态栏也显示「批量变化中 · 第 N 轮」",
-                "没有工程文件时点工具条的保存按钮，现在会和 Ctrl+S 一样弹出「另存为」，不再毫无反应"),
-
-            new("1.10.1", "改动自己会找时间落盘",
-                "2026-10-29",
-                "停手几秒后自动保存：仿真过程中不写盘，值停下来才把最后这一版写进文件——40 万点跑起来也不会一直卡",
-                "结构/参数改动也能自动保存（设置 → 工程 里打开），默认关着：不想让它在你改到一半时悄悄落盘",
-                "两次写盘之间至少隔 3 秒：连着微调十几个值时，不会每停一次手就卡一下",
-                "值这条没有开关：它是“最后一次的值要留下来”的实现方式，退出时也一样会存",
-                "设置里新增「工程」页：启动是否显示欢迎页、自动保存开关与延迟、值落盘延迟，都在这一页",
-                "自动保存失败（磁盘满、只读）会在状态栏说明原因，并停下自动保存，不会每几秒再试一次"),
-
-            new("1.10.0", "工作区变成工程",
-                "2026-10-29",
-                "「工作区」改叫「工程」：文件扩展名 .iec104proj，手里老的 .iec104ws 照样能直接打开，不用转换",
-                "每个信号存两个值：初始值（复位基准）和最后值。运行中改值只动最后值，初始值不会被污染",
-                "保存按钮放到工具条最左：没改动是淡的、有改动亮主题主色、写盘中禁用；状态栏同时显示「未保存」或「已保存 14:32」",
-                "标题栏带工程名，点表有改动时前面挂一个 ●（只是改了信号值不挂，免得仿真时一直闪）",
-                "退出即保存：只有信号值变了就静静存一次，点表结构改过才问一句「保存并退出 / 不保存 / 取消」",
-                "启动自动恢复上次的工程，主区域先显示欢迎页：继续编辑 / 新建工程 / 打开工程 / 最近使用（最多 5 条）",
-                "新增「按初始值复位」：选中了某个信号就复位它，没选就复位整个从站，确认框里写明范围",
-                "还没有工程文件时也能先建从站、加点，按 Ctrl+S 会转成「另存为」，不会因为没路径就把改动丢掉"),
-
-            new("1.9.9", "菜单再收一版",
-                "2026-10-29",
-                "「工具」菜单里新增「实时曲线」与「通信报文监视」，挨着「报文解析」那一组",
-                "工具条上的「实时曲线」撤掉，给改点位的按钮腾出一格宽度；「报文监视」仍留在条上",
-                "「视图」这一栏整条删除——窗口置顶在标题栏钉子上、监视面板收起在面板右上角、点表分组在点表右下角，都不缺入口",
-                "监视面板右上角的两个按钮改为与标题带垂直居中（之前偏上约 1.5 像素）"),
-
-            new("1.9.8", "常用动作都挪到看得见的地方",
-                "2026-10-29",
-                "工具条新增「实时曲线」：不用再翻「视图」菜单，和旁边的报文监视放在一起",
-                "「清空报文与日志」挪到下面监视栏的右上角（垃圾桶图标）：清的就是那一块内容，按钮就在那儿",
-                "监视栏可以收起 / 展开：收起来只剩一条 36 像素高的标题带，高度全给点表，再展开还是你拖动过的高度",
-                "窗口置顶挪到标题栏设置按钮后面的钉子图标：点一下就固定在最上层，再点取消，按钮会亮起来表示当前状态",
-                "「视图」菜单同步精简：留下窗口置顶、底部监视面板、点表分组方式三项，都与「界面哪块看得见」有关"),
-
-            new("1.9.7", "百万点不再吃两倍内存",
-                "2026-10-28",
-                "同一个点不再在协议层和界面层各存一份，点位对象本身也更紧凑：100 万点托管内存 480 MB → 289 MB，进程占用 875 MB → 656 MB",
-                "铺点前先按最终规模申请好索引容量，铺几十万点时不再反复搬家，铺点也快了约一成",
-                "保存工作区改为边算边写：以前保存大工程会先把整份数据在内存里拼两遍，100 万点瞬间多占近 800 MB，正是“点保存就卡死”的来源",
-                "工作区文件体积降到原来的四分之一（100 万点 253 MB → 63 MB），打开速度也快了一倍（2.6 s → 1.5 s）",
-                "空载那 200 多 MB 经实测确认不是本程序的数据：托管堆只有 13 MB，其余是 .NET 运行时与界面渲染库的固定开销"),
-
-            new("1.9.6", "提示不再是长长一行",
-                "2026-10-28",
-                "「?」的悬停提示改为多行显示（最宽 300px 自动折行），长说明不会再被截在右边"),
-
-            new("1.9.5", "图标更清楚，下拉不再“外圆内方”",
-                "2026-10-28",
-                "提示图标改成实心圆问号（18×18，主色底反白字），缩放下也一眼能看见",
-                "下拉框展开后的列表也改成 6px 圆角，选中项跟随主题色，不再是系统蓝",
-                "弹窗位置也限制在屏幕工作区内：标题栏不会再被推到屏幕外",
-                "从站配置的两种模式（新建通道 / 编辑）都确认在小屏上可滚、按钮固定"),
-
-            new("1.9.4", "弹窗在小屏上也能配完",
-                "2026-10-28",
-                "所有弹窗打开时按屏幕工作区自动收紧尺寸：小屏笔记本上不会再出现“窗口比屏幕高、确定按钮跑到屏幕外”",
-                "内容超出时窗口内部可滚动，确定 / 取消 / 全部创建等按钮固定在最下面一行，始终点得到",
-                "文本框、下拉框、数字框统一成 6px 圆角，和卡片式界面一致",
-                "成段的说明文字收进标题旁的「?」里，鼠标悬停才显示；界面上不再堆小字",
-                "弹窗一律可以在小屏上完成配置，无需改系统缩放",
-                "新增界面设计规范（源码 docs/界面设计规范.md），后续加功能按同一套规则做"),
-
-            new("1.9.3", "通道参数处处可改",
-                "2026-10-28",
-                "通道配置窗口加宽，右侧的下拉不再被窗口边界裁掉",
-                "新建从站并同时新建通道时，可以直接配链路参数（k / w / t1~t3）与报文长度",
-                "双击从站标签打开窗口时，同样能改它所属通道的链路参数与报文长度（初值取该通道现值）",
-                "批量建从站在「地址分配」与「预览」之间新增一块链路参数与报文长度，整批统一套用；要单独调某一台，建好后双击那台的标签改",
-                "四处共用同一个参数面板与同一份校验，不会再出现“这个窗口能填、那个窗口不能”"),
-
-            new("1.9.2", "报文长度可配，规约可选",
-                "2026-10-28",
-                "链路参数新增三项报文长度：传送原因 1~2 字节、公共地址 1~2 字节、信息体地址 1~3 字节，默认 2/2/3",
-                "收发两侧共用同一份长度参数：通道配置、从站编码、报文解析都按它走，不再写死宽度",
-                "长度改小前会自动核对：公共地址或点号装不下时，启动那一刻就给出可操作的提示，而不是把地址截断后照发",
-                "直接建从站时也能选通信规约（104 TCP / 101 串口），端口与串口参数随规约切换",
-                "报文解析器可按任意宽度解报文，打开时自动带上当前通道的配置",
-                "修掉站总召（QOI=20）不回数据的问题：以前只回确认和终止，中间一条数据都没有",
-                "修掉从站标签偶尔对错从站的问题（自检里按 DataContext 精确取标签）"),
-
-            new("1.9.1", "设置界面改版，关于页进设置",
-                "2026-10-28",
-                "设置里的选项改成卡片式，点一张卡片就是选中，不用再对着小圆点找",
-                "「关于」从主界面菜单栏移到设置左栏最下面，内含版本、构建信息与更新说明",
-                "侧边栏底部的视图切换合并成一个长条按钮，点一下在两种视图间切换",
-                "从站标签排成规整两行：上行名称与公共地址，下行 IP 与信号点数，灯和状态胶囊垂直居中"),
-
-            new("1.9.0", "弱化通道概念，侧边栏双视图",
-                "2026-10-28",
-                "默认只显示从站列表：新建从站时自动配一条通道，不用再先建通道",
-                "从站标签上直接显示 IP:端口，并用颜色区分停止 / 监听中 / 主站已接入",
-                "双击从站标签即可修改 IP、端口与公共地址",
-                "仍可切到「通道 / 从站」视图，一个通道下挂多个从站的场景照旧支持"),
-
-            new("1.8.2", "主题选择并入设置文件",
-                "2026-10-27",
-                "程序目录里不再单独生成 theme.txt，主题跟其它偏好一起存在 settings.json"),
-
-            new("1.8.1", "设置文件改存程序目录",
-                "2026-10-27",
-                "settings.json 默认放在 exe 旁边，整个文件夹拷到别的机器，配置跟着走",
-                "程序目录不可写时自动回退到用户目录，并在设置页说明原因"),
-
-            new("1.8.0", "分类口径与类型号扩展",
-                "2026-10-26",
-                "分类回到电网叫法：档位归遥控、累积量归遥脉、比特串归其他",
-                "新增 ASDU 类型时可自己填写 1~255 的类型号，便于扩展现场私有类型",
-                "所有弹窗的确认 / 取消按钮统一为圆角"),
-
-            new("1.7.9", "新增第六套主题",
-                "2026-10-25",
-                "新增「纯白清新绿」，与原有五套主题并列可选"),
-
-            new("1.7.7", "工具条图标重绘",
-                "2026-10-24",
-                "工具条 11 颗图标按标题栏那套风格与墨色重画，线宽与缩放统一"),
-
-            new("1.7.4", "点表标签可切换分组",
-                "2026-10-23",
-                "信号表格的标签可在「按 ASDU 类型」与「按电力大类」之间切换",
-                "点号表头标出当前进制，避免和十进制混看"),
-
-            new("1.7.0", "主题系统",
-                "2026-10-20",
-                "引入六套主题与语义色令牌，深浅色各自成立"),
-        };
+        public static IReadOnlyList<ReleaseNote> All { get; } = Load();
 
         /// <summary>最新一版的版本号（列表第一项）</summary>
         public static string LatestVersion => All.Count > 0 ? All[0].Version : AppInfo.Version;
 
         /// <summary>
         /// 是否有比当前运行的版本更新的版本。
-        ///
-        /// 现在恒为 false（内置数据里最新一条就是自己）。接了在线更新之后，
-        /// 这里就是"要不要在界面上提示升级"的唯一判据，界面不用再算一遍。
+        /// 接了在线更新之后，"要不要提示升级"仍然以这一条为准——
+        /// 在线拿到的版本号会先并进 <see cref="All"/> 再比较，界面不用自己算。
         /// </summary>
         public static bool HasNewerThanRunning => Compare(LatestVersion, AppInfo.Version) > 0;
 
         /// <summary>比较两个版本号（按段比数字，不怕 1.10 和 1.9 的字典序坑）</summary>
         public static int Compare(string left, string right)
         {
-            int[] a = Parse(left);
-            int[] b = Parse(right);
+            int[] a = ParseVersion(left);
+            int[] b = ParseVersion(right);
             for (int index = 0; index < Math.Max(a.Length, b.Length); index++)
             {
                 int x = index < a.Length ? a[index] : 0;
@@ -233,10 +96,134 @@ namespace IEC104.App.Services
             return 0;
         }
 
-        private static int[] Parse(string version) =>
-            (version ?? string.Empty)
-                .Split('.', StringSplitOptions.RemoveEmptyEntries)
-                .Select(part => int.TryParse(part, out int value) ? value : 0)
-                .ToArray();
+        /// <summary>
+        /// 按 <c>docs/CHANGELOG.md</c> 的约定切段。抽成 public 是为了让自检能直接喂字符串，
+        /// 不必依赖"嵌入资源读没读到"——两件事要分开验。
+        /// </summary>
+        public static IReadOnlyList<ReleaseNote> ParseMarkdown(string markdown)
+        {
+            var notes = new List<ReleaseNote>();
+            if (string.IsNullOrEmpty(markdown))
+            {
+                return notes;
+            }
+
+            string version = null;
+            string title = string.Empty;
+            string date = string.Empty;
+            bool dateFilled = false;
+            bool inCodeFence = false;
+            var items = new List<string>();
+
+            void Flush()
+            {
+                if (version != null)
+                {
+                    notes.Add(new ReleaseNote(version, title, date, items.ToArray()));
+                }
+            }
+
+            foreach (string raw in markdown.Replace("\r\n", "\n").Split('\n'))
+            {
+                string line = raw.TrimEnd();
+
+                // 代码块里的"格式示例"必须跳过：里面有 `## <版本号> <标题>` 这种写法，
+                // 不识别围栏就会解析出一条版本号为 "<版本号>" 的假记录。
+                if (line.StartsWith("```", StringComparison.Ordinal))
+                {
+                    inCodeFence = !inCodeFence;
+                    continue;
+                }
+
+                if (inCodeFence)
+                {
+                    continue;
+                }
+
+                if (line.StartsWith("## ", StringComparison.Ordinal))
+                {
+                    Flush();
+
+                    string head = line.Substring(3).Trim();
+                    int space = head.IndexOf(' ');
+                    version = space > 0 ? head.Substring(0, space) : head;
+                    title = space > 0 ? head.Substring(space + 1).Trim() : string.Empty;
+                    date = string.Empty;
+                    dateFilled = false;
+                    items = new List<string>();
+                    continue;
+                }
+
+                if (version == null || line.Length == 0)
+                {
+                    continue;
+                }
+
+                if (line.StartsWith("- ", StringComparison.Ordinal))
+                {
+                    items.Add(line.Substring(2).Trim());
+                    continue;
+                }
+
+                // 段头之后、条目之前的第一个非空行是日期
+                if (!dateFilled)
+                {
+                    date = line.Trim();
+                    dateFilled = true;
+                }
+            }
+
+            Flush();
+            return notes;
+        }
+
+        private static IReadOnlyList<ReleaseNote> Load()
+        {
+            IReadOnlyList<ReleaseNote> parsed = ParseMarkdown(ReadEmbedded());
+            if (parsed.Count > 0)
+            {
+                return parsed;
+            }
+
+            // 资源没嵌进去（csproj 改坏了）或文件为空：界面仍要能开，给一条说明而不是空列表，
+            // 免得"关于"页取 All[0] 时抛异常。这是兜底，不是正常路径。
+            return new[]
+            {
+                new ReleaseNote(AppInfo.Version, "这一版没有更新说明",
+                    string.Empty,
+                    "docs/CHANGELOG.md 没读到或为空，请检查 csproj 里的 EmbeddedResource 配置。"),
+            };
+        }
+
+        private static string ReadEmbedded()
+        {
+            try
+            {
+                using Stream stream = typeof(ReleaseNotes).Assembly.GetManifestResourceStream(ResourceName);
+                if (stream == null)
+                {
+                    return string.Empty;
+                }
+
+                using var reader = new StreamReader(stream, Encoding.UTF8);
+                return reader.ReadToEnd();
+            }
+            catch (Exception)
+            {
+                // 读资源失败不该让整个程序起不来。返回空串 → 走上面的兜底文案。
+                return string.Empty;
+            }
+        }
+
+        private static int[] ParseVersion(string version)
+        {
+            string[] parts = (version ?? string.Empty).Split('.', StringSplitOptions.RemoveEmptyEntries);
+            int[] values = new int[parts.Length];
+            for (int index = 0; index < parts.Length; index++)
+            {
+                values[index] = int.TryParse(parts[index], out int value) ? value : 0;
+            }
+            return values;
+        }
     }
 }

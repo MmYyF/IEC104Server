@@ -30,13 +30,25 @@ namespace IEC104.App.Services
         public const string Description = "IEC 60870-5-101/104 从站仿真工具";
 
         /// <summary>
-        /// 项目仓库地址。
+        /// 项目仓库地址，形如 <c>https://github.com/owner/repo</c>。
         ///
-        /// 仓库还没建，先留空——留空时界面上的"项目主页"和标题栏那颗 GitHub 按钮
-        /// 都会给出"地址还没确定"的提示，而不是打开一个 404。
-        /// 发布到 GitHub 后，只改这一行，两处同时生效。
+        /// **这是全项目唯一一处仓库地址**：关于页的"项目主页"、标题栏的 GitHub 按钮、
+        /// 检查更新（GitHub API 与 Release 下载地址都由它推出来）全都读这里。
+        /// 换仓库、改组织名只改这一行。
+        ///
+        /// 留空时这三处都会给出"地址还没确定"的提示，而不是打开 404 或发一个注定失败的请求。
         /// </summary>
         public const string RepositoryUrl = "";
+
+        /// <summary>
+        /// 国内镜像的更新清单地址（可选），形如 <c>https://your-bucket.oss-cn-xxx.aliyuncs.com/iec104/update.json</c>。
+        ///
+        /// 为什么要有：GitHub 的 api / releases 在国内网络下经常连不上或慢到不可用，
+        /// 而仿真工具的用户大多在内网现场。留空表示不启用镜像，只用 GitHub。
+        /// 镜像只需要托管两个文件（update.json + exe），格式与 CI 生成的一致，
+        /// 见 <see cref="UpdateService"/> 里对 update.json 的说明。
+        /// </summary>
+        public const string MirrorUpdateUrl = "";
 
         /// <summary>协议与界面框架版本，跟 csproj 里的 PackageReference 对齐</summary>
         private const string FrameworkText = ".NET 8 · Avalonia 11.3.6";

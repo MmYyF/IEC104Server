@@ -1989,18 +1989,16 @@ namespace IEC104.App.Views
         }
 
         /// <summary>
-        /// 检查更新。本工具是离线单文件发布，没有更新服务端，
-        /// 所以这里只报当前版本，并说明更新方式（换掉 exe 即可）。
-        /// 真接了发布源以后，把这里换成取版本号比较就行。
+        /// 检查更新。
+        ///
+        /// 早先这里只弹一句话（"本工具是离线单文件发布，换掉 exe 即可"），因为那时没有发布源。
+        /// 现在接了 GitHub Releases：真去比对版本、显示更新说明、下载并校验后替换自己。
+        /// 判定逻辑全在 <see cref="UpdateViewModel"/>，这里只负责开窗。
         /// </summary>
         private void OnCheckUpdateClick(object sender, RoutedEventArgs e)
         {
-            System.Version version = typeof(MainWindow).Assembly.GetName().Version;
-            _ = ShowMessageAsync("检查更新",
-                $"当前版本：{version?.ToString(3) ?? "1.5.0"}\n\n"
-                + "本工具为离线单文件发布，未配置更新源。\n"
-                + "需要升级时，直接用新版 IEC104Simulator.exe 覆盖旧文件即可，"
-                + "主题选择与工作区配置都保存在用户目录，不会丢。");
+            var window = new UpdateWindow(new UpdateViewModel());
+            _ = window.ShowDialog(this);
         }
 
         // ── 事件处理 ────────────────────────────────────────────
