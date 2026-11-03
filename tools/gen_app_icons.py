@@ -10,11 +10,14 @@
      只有"配色 + 右侧符号"不同，选起来才有可比性。
 
 输出：
-  docs/icons/candidate-X-256.png   候选原图（256）
-  docs/icons/candidate-X-64.png    中间尺寸预览
-  docs/icons/candidate-X-16.png    小尺寸预览（关键：能不能认出来）
-  docs/icons/candidate-X.ico       多尺寸 ico（16/24/32/48/64/128/256）
-  docs/icons/候选对照.png          一排候选 + 名称，供选择
+  doc-agent/icons/candidate-X-256.png   候选原图（256）
+  doc-agent/icons/candidate-X-64.png    中间尺寸预览
+  doc-agent/icons/candidate-X-16.png    小尺寸预览（关键：能不能认出来）
+  doc-agent/icons/candidate-X.ico       多尺寸 ico（16/24/32/48/64/128/256）
+  doc-agent/icons/候选对照.png          一排候选 + 名称，供选择
+
+  输出目录不进仓库（选型过程产物，程序真正用的图标在
+  src/IEC104.App/Assets/app.ico），克隆下来自己跑一次就有了。
 
 用法： python tools/gen_app_icons.py
 """
@@ -24,7 +27,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CODE = os.path.dirname(HERE)
-OUT = os.path.join(CODE, "docs", "icons")
+OUT = os.path.join(CODE, "doc-agent", "icons")
 
 # 先在 1024 画，再降采样到各尺寸。原因：
 #   Pillow 的圆角、圆、斜线都没有抗锯齿参数，只有超采样后 LANCZOS 缩下来才干净。
