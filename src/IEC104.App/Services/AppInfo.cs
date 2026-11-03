@@ -38,7 +38,7 @@ namespace IEC104.App.Services
         ///
         /// 留空时这三处都会给出"地址还没确定"的提示，而不是打开 404 或发一个注定失败的请求。
         /// </summary>
-        public const string RepositoryUrl = "";
+        public const string RepositoryUrl = "https://github.com/MmYyF/IEC104Server";
 
         /// <summary>
         /// 国内镜像的更新清单地址（可选），形如 <c>https://your-bucket.oss-cn-xxx.aliyuncs.com/iec104/update.json</c>。
