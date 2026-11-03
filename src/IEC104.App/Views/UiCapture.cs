@@ -7077,6 +7077,12 @@ namespace IEC104.App.Views
                     Color plainBg = BrushColor(plainPresenter?.Background);
                     Color plainFg = BrushColor(plainButton?.Foreground);
 
+                    // 注：悬停/按下态**没法在这里断言**。Avalonia 的 `Classes.Set(":pressed", true)`
+                    // 会直接抛 ArgumentException（"may only be added by the control itself"），
+                    // 交互伪类只允许控件自己打标；要验只能伪造 PointerPressedEventArgs 去驱动，
+                    // 代价远大于收益。所以这里只量常态，主按钮的按下色靠样式里那条
+                    // `Button.primary:pressed` 单独兜住（写了注释说明为什么必须单列）。
+
                     // 输入框：以前只设了圆角，底色描边墨色全走框架默认值，
                     // 深色主题下是 #282828 中性灰——新窗口里最扎眼的一处"没跟主题"。
                     TextBox addressBox = window.FindControl<TextBox>("NewAddressBox");

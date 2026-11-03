@@ -567,6 +567,15 @@
     <Setter Property="Background" Value="{DynamicResource PrimaryHoverBrush}" />
   </Style>
 
+  <!-- 主按钮的按下色必须单独写一条：上面那条通用的
+       `Button:pressed /template/ ContentPresenter` 给的是"浅底+浅底上的字"，
+       用在实心主色按钮上就成了"按下变成一块浅色淡字"，比不响应还难看。
+       类选择器更具体，会把通用那条压掉。 -->
+  <Style Selector="Button.primary:pressed /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource PrimaryPressedBrush}" />
+    <Setter Property="TextBlock.Foreground" Value="{DynamicResource OnPrimaryBrush}" />
+  </Style>
+
   <!-- ══ 欢迎页（1.10）══
        配色只用三类令牌：墨色（TextPrimary）说正事、次要灰（TextSecondary）说细节、
        主色（Primary）说"这里可以点"。六套主题各自有主色，欢迎页跟着自动变，
